@@ -1,0 +1,7 @@
+#compdef mdviewer
+
+_mdviewer() {
+    _arguments '1:file:_files -g "*.{md,html}"'
+}
+
+_mdviewer "$@"
