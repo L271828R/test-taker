@@ -1,5 +1,8 @@
 build/
 mermaid.min.js
+highlight.min.js
+highlight-light.min.css
+highlight-dark.min.css
 *.o
 *.a
 .DS_Store
