@@ -56,8 +56,7 @@ std::string BuildHTML(const std::string& body,
                       const std::string& title,
                       bool darkMode,
                       int fontSizePercent) {
-    const std::string htmlClass    = darkMode ? " class=\"dark\"" : "";
-    const std::string mermaidTheme = darkMode ? "dark" : "default";
+    const std::string htmlClass = darkMode ? " class=\"dark\"" : "";
     char fsBuf[32];
     snprintf(fsBuf, sizeof(fsBuf), "%.4g", 16.0 * fontSizePercent / 100.0);
     const std::string fsPx       = std::string(fsBuf) + "px";
@@ -338,8 +337,10 @@ document.querySelectorAll('pre code').forEach(function(block) {
   wrapper.appendChild(btn);
 });
 
-// ── Mermaid init (theme set by C++ based on current mode) ────────────────
-mermaid.initialize({startOnLoad:true, theme:')HTML" + mermaidTheme + R"HTML(', securityLevel:'loose'});
+// ── Mermaid init ─────────────────────────────────────────────────────────
+mermaid.initialize({startOnLoad:true,
+  theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+  securityLevel:'loose'});
 
 // ── Chapter chat buttons ─────────────────────────────────────────────────
 document.querySelectorAll('h2[data-ch-id]').forEach(function(h2) {

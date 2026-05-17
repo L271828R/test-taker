@@ -38,6 +38,8 @@ public:
                     bool               darkMode);
 
     bool HasActiveSession() const { return m_active; }
+    void SetDarkMode(bool dark) { m_darkMode = dark; if (m_active) Render(); }
+    void AbandonSession();
 
 private:
     SessionCompleteCallback   m_onComplete;
@@ -62,6 +64,7 @@ private:
     wxButton*         m_sendBtn      = nullptr;
     wxButton*         m_skipBtn      = nullptr;
     wxButton*         m_flagBtn      = nullptr;
+    wxButton*         m_abandonBtn   = nullptr;
     wxStaticText*     m_statusLabel  = nullptr;
 
     void RequestFirstQuestion();
@@ -73,6 +76,7 @@ private:
     void OnSend(wxCommandEvent&);
     void OnSkip(wxCommandEvent&);
     void OnFlag(wxCommandEvent&);
+    void OnAbandon(wxCommandEvent&);
     void OnWebViewNav(wxWebViewEvent&);
 
     wxDECLARE_EVENT_TABLE();
