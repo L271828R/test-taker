@@ -88,11 +88,11 @@ void ChatPanel::Render(const std::string& pendingQ) {
 
 // ---------------------------------------------------------------------------
 std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
-    const std::string bg      = m_darkMode ? "#0d1117" : "#ffffff";
-    const std::string text    = m_darkMode ? "#e6edf3" : "#1a1a1a";
-    const std::string qBg     = m_darkMode ? "#1c2a3a" : "#e3f2fd";
-    const std::string aBg     = m_darkMode ? "#1c2a1c" : "#f1f8e9";
-    const std::string mutedC  = m_darkMode ? "#8b949e" : "#666666";
+    const std::string bg     = m_darkMode ? "#0d1117" : "#ffffff";
+    const std::string text   = m_darkMode ? "#e6edf3" : "#1a1a1a";
+    const std::string qBg    = m_darkMode ? "#1c2a3a" : "#e3f2fd";
+    const std::string aBg    = m_darkMode ? "#1c2a1c" : "#f1f8e9";
+    const std::string muted  = m_darkMode ? "#8b949e" : "#666666";
 
     std::string body;
     for (const auto& t : m_turns) {
@@ -123,10 +123,9 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
            ".turn { margin-bottom:18px; }"
            ".q { background:" + qBg + "; border-radius:8px 8px 8px 2px;"
            "  padding:10px 14px; margin-bottom:6px; font-weight:500; }"
-           ".a { background:" + aBg + "; border-radius:2px 8px 8px 8px;"
-           "  padding:10px 14px; }"
-           ".thinking { color:" + mutedC + "; font-style:italic; }"
-           ".empty { color:" + mutedC + "; font-style:italic; padding:8px 0; }"
+           ".a { background:" + aBg + "; border-radius:2px 8px 8px 8px; padding:10px 14px; }"
+           ".thinking { color:" + muted + "; font-style:italic; }"
+           ".empty { color:" + muted + "; font-style:italic; padding:8px 0; }"
            "code { background:rgba(128,128,128,.15); padding:.15em .35em; border-radius:3px; }"
            "</style>"
            "</head><body>" + body +

@@ -12,12 +12,14 @@ enum {
     ID_EXAM_SEND = wxID_HIGHEST + 100,
     ID_EXAM_SKIP,
     ID_EXAM_FLAG,
+    ID_EXAM_ABANDON,
 };
 
 wxBEGIN_EVENT_TABLE(ExamPanel, wxPanel)
-    EVT_BUTTON(ID_EXAM_SEND, ExamPanel::OnSend)
-    EVT_BUTTON(ID_EXAM_SKIP, ExamPanel::OnSkip)
-    EVT_BUTTON(ID_EXAM_FLAG, ExamPanel::OnFlag)
+    EVT_BUTTON(ID_EXAM_SEND,    ExamPanel::OnSend)
+    EVT_BUTTON(ID_EXAM_SKIP,    ExamPanel::OnSkip)
+    EVT_BUTTON(ID_EXAM_FLAG,    ExamPanel::OnFlag)
+    EVT_BUTTON(ID_EXAM_ABANDON, ExamPanel::OnAbandon)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, ExamPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
@@ -33,15 +35,17 @@ ExamPanel::ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete
     auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
     m_answerCtrl = new wxTextCtrl(this, wxID_ANY, "",
         wxDefaultPosition, wxSize(-1, 80), wxTE_MULTILINE | wxTE_PROCESS_ENTER);
-    m_sendBtn = new wxButton(this, ID_EXAM_SEND, "Submit");
-    m_skipBtn = new wxButton(this, ID_EXAM_SKIP, "I don't know");
-    m_flagBtn = new wxButton(this, ID_EXAM_FLAG, "Flag for review");
+    m_sendBtn    = new wxButton(this, ID_EXAM_SEND,    "Submit");
+    m_skipBtn    = new wxButton(this, ID_EXAM_SKIP,    "I don't know");
+    m_flagBtn    = new wxButton(this, ID_EXAM_FLAG,    "Flag for review");
+    m_abandonBtn = new wxButton(this, ID_EXAM_ABANDON, "End Session");
 
     inputRow->Add(m_answerCtrl, 1, wxEXPAND | wxRIGHT, 4);
     auto* btnCol = new wxBoxSizer(wxVERTICAL);
-    btnCol->Add(m_sendBtn, 0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_skipBtn, 0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_flagBtn, 0, wxEXPAND);
+    btnCol->Add(m_sendBtn,    0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_skipBtn,    0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_flagBtn,    0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_abandonBtn, 0, wxEXPAND);
     inputRow->Add(btnCol, 0, wxEXPAND);
 
     m_statusLabel = new wxStaticText(this, wxID_ANY, "");
@@ -55,6 +59,7 @@ ExamPanel::ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete
     m_sendBtn->Disable();
     m_skipBtn->Disable();
     m_flagBtn->Disable();
+    m_abandonBtn->Disable();
     Render();
 }
 
@@ -78,6 +83,7 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_sendBtn->Enable();
     m_skipBtn->Enable();
     m_flagBtn->Disable(); // enabled after first question is answered
+    m_abandonBtn->Enable();
 
     RequestFirstQuestion();
 }
@@ -112,12 +118,14 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
         m_sendBtn->Disable();
         m_skipBtn->Disable();
         m_flagBtn->Enable(!turns.empty());
+        m_abandonBtn->Disable();
         m_statusLabel->SetLabel("Session complete. See Review tab for results.");
     } else {
         // Session was interrupted mid-way — re-enable input, ask next question.
         m_sendBtn->Enable();
         m_skipBtn->Enable();
         m_flagBtn->Enable(!turns.empty());
+        m_abandonBtn->Enable();
         int next = (int)turns.size() + 1;
         m_statusLabel->SetLabel("Resuming — question " + std::to_string(next)
                                 + " of " + std::to_string(hdr.totalQuestions));
@@ -157,6 +165,7 @@ void ExamPanel::StartDrill(const std::string& projectDir,
     m_sendBtn->Enable();
     m_skipBtn->Enable();
     m_flagBtn->Enable();
+    m_abandonBtn->Enable();
 
     m_statusLabel->SetLabel("Drill: " + m_currentQuestion.substr(0, 60));
     Render();
@@ -302,6 +311,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_statusLabel->SetLabel("Session complete! See Review tab for results.");
                 m_sendBtn->Disable();
                 m_skipBtn->Disable();
+                m_abandonBtn->Disable();
                 {
                     AppState st = LoadAppState();
                     st.lastSessionFile.clear();
@@ -359,6 +369,33 @@ void ExamPanel::OnSend(wxCommandEvent&) {
 
 void ExamPanel::OnSkip(wxCommandEvent&) {
     SubmitAnswer("");
+}
+
+void ExamPanel::OnAbandon(wxCommandEvent&) {
+    int ans = wxMessageBox(
+        "End this session now?\n\nProgress so far will be saved to the Review tab.",
+        "End Session", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, this);
+    if (ans != wxYES) return;
+    AbandonSession();
+}
+
+void ExamPanel::AbandonSession() {
+    m_active          = false;
+    m_busy            = false;
+    m_currentQuestion.clear();
+
+    m_sendBtn->Disable();
+    m_skipBtn->Disable();
+    m_abandonBtn->Disable();
+    m_statusLabel->SetLabel("Session ended. See Review tab for results.");
+
+    AppState st = LoadAppState();
+    st.lastSessionFile.clear();
+    SaveAppState(st);
+
+    if (m_onComplete) m_onComplete(m_sessionFile);
+    Render();
+    Logger::get().log("Session abandoned: " + m_sessionFile);
 }
 
 void ExamPanel::OnFlag(wxCommandEvent&) {

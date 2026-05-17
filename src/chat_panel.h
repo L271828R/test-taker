@@ -15,6 +15,7 @@ public:
     void SyncProject(const std::string& projectDir,
                      const LLMConfig&   llmCfg,
                      bool               darkMode);
+    void SetDarkMode(bool dark) { m_darkMode = dark; Render(); }
 
 private:
     std::string              m_chatFile;   // <projectDir>/chat.md

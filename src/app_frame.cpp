@@ -185,12 +185,16 @@ void AppFrame::OnThemeLight(wxCommandEvent&) {
     if (!m_darkMode) return;
     m_darkMode = false;
     wxConfig("TestTaker").Write("darkMode", false);
+    m_examPage->SetDarkMode(false);
+    m_chatPage->SetDarkMode(false);
 }
 
 void AppFrame::OnThemeDark(wxCommandEvent&) {
     if (m_darkMode) return;
     m_darkMode = true;
     wxConfig("TestTaker").Write("darkMode", true);
+    m_examPage->SetDarkMode(true);
+    m_chatPage->SetDarkMode(true);
 }
 
 void AppFrame::OnViewLogs(wxCommandEvent&) {
