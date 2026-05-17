@@ -1,5 +1,6 @@
 #include "chat_panel.h"
 #include "conversation.h"
+#include "html_template.h"
 #include "markdown.h"
 #include "meta.h"
 #include "logger.h"
@@ -88,23 +89,20 @@ void ChatPanel::Render(const std::string& pendingQ) {
 
 // ---------------------------------------------------------------------------
 std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
-    const std::string bg     = m_darkMode ? "#0d1117" : "#ffffff";
-    const std::string text   = m_darkMode ? "#e6edf3" : "#1a1a1a";
-    const std::string qBg    = m_darkMode ? "#1c2a3a" : "#e3f2fd";
-    const std::string aBg    = m_darkMode ? "#1c2a1c" : "#f1f8e9";
-    const std::string muted  = m_darkMode ? "#8b949e" : "#666666";
+    const std::string qBg = m_darkMode ? "#1c2a3a" : "#e3f2fd";
+    const std::string aBg = m_darkMode ? "#1c2a1c" : "#f1f8e9";
 
     std::string body;
     for (const auto& t : m_turns) {
-        body += "<div class='turn'>"
-                "<div class='q'>" + EscapeHTML(t.question) + "</div>"
-                "<div class='a'>" + ProcessInline(t.answer) + "</div>"
+        body += "<div class='chat-turn'>"
+                "<div class='chat-q'>" + EscapeHTML(t.question) + "</div>"
+                "<div class='chat-a'>" + RenderMarkdown(t.answer) + "</div>"
                 "</div>\n";
     }
     if (!pendingQ.empty()) {
-        body += "<div class='turn'>"
-                "<div class='q'>" + EscapeHTML(pendingQ) + "</div>"
-                "<div class='a thinking'>&#x22EF;</div>"
+        body += "<div class='chat-turn'>"
+                "<div class='chat-q'>" + EscapeHTML(pendingQ) + "</div>"
+                "<div class='chat-a thinking'>&#x22EF;</div>"
                 "</div>\n";
     }
     if (body.empty()) {
@@ -114,23 +112,20 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
             body = "<p class='empty'>Ask anything about your study topic.</p>";
     }
 
-    return "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
-           "<style>"
-           "* { box-sizing:border-box; margin:0; padding:0 }"
-           "body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;"
-           "  font-size:14px; line-height:1.6;"
-           "  background:" + bg + "; color:" + text + "; padding:16px; }"
-           ".turn { margin-bottom:18px; }"
-           ".q { background:" + qBg + "; border-radius:8px 8px 8px 2px;"
-           "  padding:10px 14px; margin-bottom:6px; font-weight:500; }"
-           ".a { background:" + aBg + "; border-radius:2px 8px 8px 8px; padding:10px 14px; }"
-           ".thinking { color:" + muted + "; font-style:italic; }"
-           ".empty { color:" + muted + "; font-style:italic; padding:8px 0; }"
-           "code { background:rgba(128,128,128,.15); padding:.15em .35em; border-radius:3px; }"
-           "</style>"
-           "</head><body>" + body +
-           "<script>window.scrollTo(0,document.body.scrollHeight);</script>"
-           "</body></html>";
+    body += "<script>window.scrollTo(0,document.body.scrollHeight);</script>";
+
+    const std::string extraCSS = R"(<style>
+.chat-turn { margin-bottom:18px; }
+.chat-q { background:)" + qBg + R"(; border-radius:8px 8px 8px 2px;
+  padding:10px 14px; margin-bottom:6px; font-weight:500; }
+.chat-a { background:)" + aBg + R"(; border-radius:2px 8px 8px 8px;
+  padding:10px 14px; }
+.chat-a pre { margin:8px 0; }
+.thinking { color:var(--text-muted); font-style:italic; }
+.empty    { color:var(--text-muted); font-style:italic; }
+</style>)";
+
+    return BuildHTML(extraCSS + body, "Chat", m_darkMode);
 }
 
 // ---------------------------------------------------------------------------
