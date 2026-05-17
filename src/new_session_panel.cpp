@@ -88,25 +88,36 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
-    // ── Topic ─────────────────────────────────────────────────────────────
+    // ── Topic label ───────────────────────────────────────────────────────
     {
-        auto* label = new wxStaticText(this, wxID_ANY, "What do you want to be tested on?");
+        auto* label = new wxStaticText(this, wxID_ANY, "Topic (short name for Review tab):");
         wxFont lf = label->GetFont();
-        lf.SetPointSize(lf.GetPointSize() + 4);
         lf.SetWeight(wxFONTWEIGHT_BOLD);
         label->SetFont(lf);
-        inner->Add(label, 0, wxBOTTOM, 6);
+        inner->Add(label, 0, wxBOTTOM, 4);
 
         m_topicCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-            wxDefaultPosition, wxSize(-1, 90),
-            wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
+            wxDefaultPosition, wxSize(-1, -1), wxTE_RICH2);
         wxFont tf = m_topicCtrl->GetFont();
         tf.SetPointSize(tf.GetPointSize() + 2);
         m_topicCtrl->SetFont(tf);
-        m_topicCtrl->SetHint(
-            "e.g. \"AWS S3 and IAM policies\" or \"Python generators and coroutines\" "
-            "or \"C++ move semantics\"…");
+        m_topicCtrl->SetHint("e.g. \"C++ memory model\" or \"AWS IAM\" or \"Spanish verbs\"");
         inner->Add(m_topicCtrl, 0, wxEXPAND | wxBOTTOM, 10);
+    }
+
+    // ── Instructions ─────────────────────────────────────────────────────
+    {
+        auto* label = new wxStaticText(this, wxID_ANY,
+            "What to focus on (injected into every prompt — be specific):");
+        inner->Add(label, 0, wxBOTTOM, 4);
+
+        m_instrCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
+            wxDefaultPosition, wxSize(-1, 80),
+            wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
+        m_instrCtrl->SetHint(
+            "e.g. \"Focus on move semantics, RAII, and smart pointers. "
+            "Avoid basic syntax questions.\"");
+        inner->Add(m_instrCtrl, 0, wxEXPAND | wxBOTTOM, 10);
     }
 
     // ── Difficulty + Question count ───────────────────────────────────────
@@ -208,6 +219,7 @@ void NewSessionPanel::SyncProject(const std::string& projectDir) {
     } else {
         m_projectLabel->SetLabel(wxString::FromUTF8(
             fs::path(projectDir).filename().string()));
+        RestoreFormState();
     }
 }
 
@@ -239,11 +251,12 @@ std::string NewSessionPanel::GenerateSessionFilename() const {
 // ---------------------------------------------------------------------------
 void NewSessionPanel::SaveFormState() const {
     AppState st = LoadAppState();
-    st.topic      = m_topicCtrl->GetValue().ToStdString();
-    st.backend    = m_backendChoice->GetString(
+    st.topic        = m_topicCtrl->GetValue().ToStdString();
+    st.instructions = m_instrCtrl->GetValue().ToStdString();
+    st.backend      = m_backendChoice->GetString(
         m_backendChoice->GetSelection()).ToStdString();
-    st.apiKey     = m_apiKeyCtrl->GetValue().ToStdString();
-    st.ollamaModel = m_ollamaModel->GetValue().ToStdString();
+    st.apiKey       = m_apiKeyCtrl->GetValue().ToStdString();
+    st.ollamaModel  = m_ollamaModel->GetValue().ToStdString();
     SaveAppState(st);
 }
 
@@ -251,6 +264,8 @@ void NewSessionPanel::RestoreFormState() {
     AppState st = LoadAppState();
     if (!st.topic.empty())
         m_topicCtrl->SetValue(wxString::FromUTF8(st.topic));
+    if (!st.instructions.empty())
+        m_instrCtrl->SetValue(wxString::FromUTF8(st.instructions));
     if (!st.backend.empty()) {
         int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
         if (idx != wxNOT_FOUND) {
@@ -311,6 +326,7 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     // Build ExamConfig
     ExamConfig cfg;
     cfg.topic          = topic.ToStdString();
+    cfg.instructions   = m_instrCtrl->GetValue().Trim().ToStdString();
     cfg.difficulty     = m_difficultyCtrl->GetString(
         m_difficultyCtrl->GetSelection()).ToStdString();
     cfg.totalQuestions = m_countCtrl->GetValue();
@@ -341,8 +357,10 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
         std::ofstream f(sessionFile);
         if (!f) { SetStatus("Cannot create session file."); return; }
         f << "# " << cfg.topic << " — Session\n\n"
-          << "**Topic:** " << cfg.topic << "\n"
-          << "**Difficulty:** " << cfg.difficulty << "\n"
+          << "**Topic:** " << cfg.topic << "\n";
+        if (!cfg.instructions.empty())
+            f << "**Instructions:** " << cfg.instructions << "\n";
+        f << "**Difficulty:** " << cfg.difficulty << "\n"
           << "**Questions:** " << cfg.totalQuestions << "\n"
           << "**Backend:** " << backendLabel << "\n\n";
     }
@@ -358,6 +376,13 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     RecordSession(m_activeProjectDir, rec);
 
     SaveFormState();
+
+    // Persist last session so it can be resumed after restart.
+    {
+        AppState st = LoadAppState();
+        st.lastSessionFile = fs::path(sessionFile).filename().string();
+        SaveAppState(st);
+    }
 
     Logger::get().log("Starting session: " + sessionFile
                       + "  topic=" + cfg.topic

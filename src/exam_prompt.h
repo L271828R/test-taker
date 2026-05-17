@@ -4,7 +4,8 @@
 #include "session.h"
 
 struct ExamConfig {
-    std::string topic;
+    std::string topic;           // short label shown in Review (one line)
+    std::string instructions;    // free-form focus/detail injected into the prompt
     std::string difficulty;      // "easy" | "medium" | "hard" | "mixed"
     std::string projectContext;  // contents of context.md, injected verbatim
     int         totalQuestions = 10;
@@ -36,3 +37,7 @@ struct ScoredResponse {
 };
 
 ScoredResponse ParseScoredResponse(const std::string& llmOutput);
+
+// Render completed turns as HTML body fragment.
+// Each turn gets a hover-highlight and a testtaker://flag/N link to toggle its flag.
+std::string RenderExamTurns(const std::vector<QuestionTurn>& turns);

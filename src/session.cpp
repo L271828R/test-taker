@@ -120,6 +120,32 @@ std::vector<QuestionTurn> LoadSession(const std::string& filePath) {
 }
 
 // ---------------------------------------------------------------------------
+SessionHeader LoadSessionHeader(const std::string& filePath) {
+    SessionHeader hdr;
+    std::string content = readFile(filePath);
+    if (content.empty()) return hdr;
+
+    std::istringstream ss(content);
+    std::string line;
+    while (std::getline(ss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind("**Topic:** ", 0) == 0)
+            hdr.topic = line.substr(11);
+        else if (line.rfind("**Instructions:** ", 0) == 0)
+            hdr.instructions = line.substr(18);
+        else if (line.rfind("**Difficulty:** ", 0) == 0)
+            hdr.difficulty = line.substr(16);
+        else if (line.rfind("**Questions:** ", 0) == 0) {
+            try { hdr.totalQuestions = std::stoi(line.substr(15)); } catch (...) {}
+        } else if (line.rfind("**Backend:** ", 0) == 0)
+            hdr.backend = line.substr(13);
+        else if (line.rfind(":::session[", 0) == 0)
+            break; // stop at session block
+    }
+    return hdr;
+}
+
+// ---------------------------------------------------------------------------
 bool AppendSessionTurn(const std::string& filePath, const QuestionTurn& turn) {
     std::string content = readFile(filePath);
     if (content.empty()) return false;

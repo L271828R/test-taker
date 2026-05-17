@@ -117,6 +117,17 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
     }
     m_chatPage->SyncProject(projectDir, llmCfg, m_darkMode);
 
+    // Resume last incomplete session if one exists for this project.
+    if (!state.lastSessionFile.empty() && !m_examPage->HasActiveSession()) {
+        std::string sessionPath = projectDir + "/" + state.lastSessionFile;
+        std::ifstream check(sessionPath);
+        if (check.good()) {
+            m_examPage->ResumeSession(projectDir, sessionPath, llmCfg, m_darkMode);
+            m_notebook->SetSelection(TAB_EXAM);
+            Logger::get().log("Auto-resumed session: " + sessionPath);
+        }
+    }
+
     SetStatusText("Project: " + projectDir);
     Logger::get().log("Project activated: " + projectDir);
 }

@@ -21,21 +21,28 @@ private:
     std::string   m_projectDir;
 
     wxListCtrl*   m_sessionList  = nullptr;
-    wxListCtrl*   m_flaggedList  = nullptr;
+    wxListCtrl*   m_questionList = nullptr;
     wxStaticText* m_summaryLabel = nullptr;
 
-    struct FlaggedRow {
+    struct QuestionRow {
         std::string sessionFile;
         int         questionIndex = 0;
         std::string questionText;
-        Score       previousScore = Score::Skipped;
+        Score       score         = Score::Skipped;
+        bool        flagged       = false;
     };
-    std::vector<FlaggedRow> m_flaggedRows;
+    std::vector<QuestionRow> m_questionRows;
+
+    // sessions parallel to m_sessionList rows (newest-first order)
+    std::vector<SessionRecord> m_sessionRecords;
 
     void LoadSessionList();
-    void LoadFlaggedList();
+    void LoadQuestionList(const std::string& sessionFile);
 
-    void OnFlaggedActivated(wxListEvent&);
+    void OnSessionSelected(wxListEvent&);
+    void OnQuestionActivated(wxListEvent&);
+    void OnQuestionRightClick(wxListEvent&);
+    void OnToggleFlag(wxCommandEvent&);
 
     wxDECLARE_EVENT_TABLE();
 };

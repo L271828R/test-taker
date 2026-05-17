@@ -141,12 +141,19 @@ void RecordSession(const std::string& projectDir, const SessionRecord& rec) {
     auto meta = LoadExamMeta(projectDir);
     if (meta.created.empty()) meta.created = MetaNow();
 
+    SessionRecord normalized = rec;
+    auto nl = normalized.topic.find('\n');
+    if (nl != std::string::npos)
+        normalized.topic = normalized.topic.substr(0, nl);
+    while (!normalized.topic.empty() && normalized.topic.back() == ' ')
+        normalized.topic.pop_back();
+
     auto it = std::find_if(meta.sessions.begin(), meta.sessions.end(),
-        [&](const SessionRecord& s){ return s.sessionFile == rec.sessionFile; });
+        [&](const SessionRecord& s){ return s.sessionFile == normalized.sessionFile; });
     if (it != meta.sessions.end())
-        *it = rec;
+        *it = normalized;
     else
-        meta.sessions.push_back(rec);
+        meta.sessions.push_back(normalized);
 
     SaveExamMeta(projectDir, meta);
 }

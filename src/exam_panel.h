@@ -6,6 +6,7 @@
 #include <wx/webview.h>
 #include "session.h"
 #include "exam_prompt.h"
+#include "config.h"
 #include "llm.h"
 
 class ExamPanel : public wxPanel {
@@ -19,6 +20,12 @@ public:
                       const ExamConfig&  cfg,
                       const LLMConfig&   llmCfg,
                       bool               darkMode);
+
+    // Reload a previous session from disk (called on startup if lastSessionFile is set).
+    void ResumeSession(const std::string& projectDir,
+                       const std::string& sessionFile,
+                       const LLMConfig&   llmCfg,
+                       bool               darkMode);
 
     // Re-drill a single flagged question.
     void StartDrill(const std::string& projectDir,
@@ -52,6 +59,7 @@ private:
     wxStaticText* m_statusLabel = nullptr;
 
     void RequestFirstQuestion();
+    void RequestNextQuestion();
     void SubmitAnswer(const std::string& answer);
     void Render();
     std::string BuildExamHTML() const;
@@ -59,6 +67,7 @@ private:
     void OnSend(wxCommandEvent&);
     void OnSkip(wxCommandEvent&);
     void OnFlag(wxCommandEvent&);
+    void OnWebViewNav(wxWebViewEvent&);
 
     wxDECLARE_EVENT_TABLE();
 };

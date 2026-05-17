@@ -1,4 +1,5 @@
 #include "exam_prompt.h"
+#include "markdown.h"
 #include <sstream>
 
 // ---------------------------------------------------------------------------
@@ -6,6 +7,10 @@ std::string BuildFirstQuestionPrompt(const ExamConfig& cfg) {
     std::ostringstream out;
     out << "You are an expert interviewer and examiner. Your role is to test the user's "
            "knowledge of: " << cfg.topic << ". Difficulty level: " << cfg.difficulty << ".\n\n";
+
+    if (!cfg.instructions.empty()) {
+        out << "Specific focus for this session: " << cfg.instructions << "\n\n";
+    }
 
     if (!cfg.projectContext.empty()) {
         out << "Study material (use this to calibrate question relevance):\n\n"
@@ -38,6 +43,10 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
     std::ostringstream out;
     out << "You are an expert interviewer. You are testing knowledge of: "
         << cfg.topic << ". Difficulty: " << cfg.difficulty << ".\n\n";
+
+    if (!cfg.instructions.empty()) {
+        out << "Specific focus for this session: " << cfg.instructions << "\n\n";
+    }
 
     if (!cfg.projectContext.empty()) {
         out << "Study material:\n\n" << cfg.projectContext << "\n\n";
@@ -136,4 +145,58 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput) {
 
     resp.parseOk = (found >= 2); // SCORE + EXPLANATION minimum
     return resp;
+}
+
+// ---------------------------------------------------------------------------
+std::string RenderExamTurns(const std::vector<QuestionTurn>& turns) {
+    std::ostringstream out;
+
+    out << R"(<style>
+.turn { border-bottom:1px solid var(--border); margin-bottom:1.2em;
+        padding-bottom:1em; border-radius:6px; padding:0.8em;
+        transition:background 0.15s; position:relative; }
+.turn:hover { background:var(--surface); }
+.turn:hover .flag-btn { opacity:1; }
+.flag-btn { position:absolute; top:0.6em; right:0.6em;
+            opacity:0; transition:opacity 0.15s;
+            background:none; border:1px solid var(--border);
+            border-radius:4px; padding:0.15em 0.5em;
+            font-size:0.85em; cursor:pointer; color:var(--text-muted);
+            text-decoration:none; }
+.flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
+.question { font-weight:600; margin-bottom:.4em; }
+.answer { color:var(--text-muted); margin-bottom:.3em; font-style:italic; }
+.verdict { display:inline-block; padding:.15em .6em; border-radius:4px;
+           font-size:.85em; font-weight:600; margin-bottom:.4em; }
+.verdict.correct { background:#1a7f37; color:#fff; }
+.verdict.partial  { background:#9a6700; color:#fff; }
+.verdict.missed   { background:#cf222e; color:#fff; }
+.verdict.skipped  { background:#57606a; color:#fff; }
+.explanation { font-size:.95em; }
+</style>
+)";
+
+    for (int i = 0; i < (int)turns.size(); ++i) {
+        const auto& t = turns[i];
+        std::string scoreClass =
+            t.score == Score::Correct ? "correct" :
+            t.score == Score::Partial ? "partial" :
+            t.score == Score::Missed  ? "missed"  : "skipped";
+        std::string flagClass = t.flagged ? " flagged" : "";
+        std::string flagLabel = t.flagged ? "⚑ flagged" : "⚑ flag";
+
+        out << "<div class='turn'>"
+            << "<a class='flag-btn" << flagClass << "' href='testtaker://flag/"
+            << i << "'>" << flagLabel << "</a>"
+            << "<div class='question'>" << RenderMarkdown(t.question) << "</div>"
+            << "<div class='answer'><strong>Your answer:</strong> "
+            << EscapeHTML(t.userAnswer.empty() ? "(skipped)" : t.userAnswer)
+            << "</div>"
+            << "<div class='verdict " << scoreClass << "'>"
+            << ScoreLabel(t.score) << "</div>"
+            << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>"
+            << "</div>\n";
+    }
+
+    return out.str();
 }

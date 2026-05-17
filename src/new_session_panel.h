@@ -25,7 +25,8 @@ private:
     std::string   m_activeProjectDir;
 
     wxStaticText* m_projectLabel   = nullptr;
-    wxTextCtrl*   m_topicCtrl      = nullptr;
+    wxTextCtrl*   m_topicCtrl      = nullptr;  // short label (one line)
+    wxTextCtrl*   m_instrCtrl      = nullptr;  // free-form focus instructions
     wxChoice*     m_difficultyCtrl = nullptr;
     wxSpinCtrl*   m_countCtrl      = nullptr;
     wxChoice*     m_backendChoice  = nullptr;

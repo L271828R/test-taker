@@ -32,3 +32,13 @@ bool SetTurnFlagged(const std::string& filePath, int index, bool flagged);
 Score       ScoreFromString(const std::string& s);
 std::string ScoreToString(Score s);
 std::string ScoreLabel(Score s);
+
+// Parse the markdown header of a session file into topic/difficulty/totalQuestions.
+struct SessionHeader {
+    std::string topic;
+    std::string instructions;
+    std::string difficulty;
+    std::string backend;
+    int         totalQuestions = 0;
+};
+SessionHeader LoadSessionHeader(const std::string& filePath);

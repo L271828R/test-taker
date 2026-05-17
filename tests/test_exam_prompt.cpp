@@ -19,8 +19,13 @@ int test_exam_prompt() {
                && p.find("5")                                != std::string::npos
                && p.find("bucket policies and IAM roles")    != std::string::npos
                && p.find("question 1")                       != std::string::npos;
-        if (!ok) {
-            std::cerr << "FAIL [first-question-prompt]: missing expected content\n";
+        // instructions field injected when present
+        ExamConfig cfgWithInstr = cfg;
+        cfgWithInstr.instructions = "Focus specifically on cross-account access patterns.";
+        std::string p2 = BuildFirstQuestionPrompt(cfgWithInstr);
+        bool instrOk = p2.find("cross-account access patterns") != std::string::npos;
+        if (!ok || !instrOk) {
+            std::cerr << "FAIL [first-question-prompt]: ok=" << ok << " instrOk=" << instrOk << "\n";
             ++failures;
         } else {
             std::cout << "PASS [first-question-prompt]\n";
@@ -173,6 +178,35 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [session-summary-prompt]\n";
+        }
+    }
+
+    // RenderExamTurns: each turn contains a flag link with its index
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question = "What is RAII?"; t0.userAnswer = "Resource management.";
+        t0.score = Score::Correct; t0.flagged = false;
+        QuestionTurn t1;
+        t1.question = "What is a vtable?"; t1.userAnswer = "Virtual dispatch table.";
+        t1.score = Score::Missed; t1.flagged = true;
+        turns.push_back(t0);
+        turns.push_back(t1);
+
+        std::string html = RenderExamTurns(turns);
+        bool hasFlag0    = html.find("testtaker://flag/0") != std::string::npos;
+        bool hasFlag1    = html.find("testtaker://flag/1") != std::string::npos;
+        bool flagged1    = html.find("flagged") != std::string::npos;
+        bool hasHover    = html.find(":hover") != std::string::npos
+                        || html.find("hover") != std::string::npos;
+
+        if (!hasFlag0 || !hasFlag1 || !flagged1 || !hasHover) {
+            std::cerr << "FAIL [render-exam-turns-flag-links]:"
+                      << " flag0=" << hasFlag0 << " flag1=" << hasFlag1
+                      << " flagged1=" << flagged1 << " hover=" << hasHover << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-exam-turns-flag-links]\n";
         }
     }
 

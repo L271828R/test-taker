@@ -160,6 +160,33 @@ int test_conversation() {
         fs::remove(tmp);
     }
 
+    // AppendTurn + LoadConversation: round-trip using exact chat.md stub format
+    // (reproduces the bug where chat history was lost after app restart)
+    {
+        auto tmp = fs::temp_directory_path() / "test_conv_chat_stub.md";
+        std::ofstream f(tmp);
+        f << "# Chat\n\n<!-- ch:0 -->\n## Conversation";  // no trailing newline, matches SyncProject
+        f.close();
+
+        ConversationTurn t{"What is a vtable?", "A table of function pointers for virtual dispatch."};
+        bool ok = AppendTurn(tmp.string(), 0, "Conversation", t);
+        if (!ok) {
+            std::cerr << "FAIL [chat-stub-append]: AppendTurn returned false\n";
+            ++failures;
+        } else {
+            auto loaded = LoadConversation(tmp.string(), 0);
+            if (loaded.size() != 1
+                || loaded[0].question != t.question
+                || loaded[0].answer   != t.answer) {
+                std::cerr << "FAIL [chat-stub-append]: loaded " << loaded.size() << " turns\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [chat-stub-append]\n";
+            }
+        }
+        fs::remove(tmp);
+    }
+
     // BuildQAPrompt: contains chapter title and question
     {
         std::vector<ConversationTurn> history = {{"Q1", "A1"}};

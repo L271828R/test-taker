@@ -28,12 +28,16 @@ ChatPanel::ChatPanel(wxWindow* parent, bool darkMode)
     auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
     m_inputCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
         wxDefaultPosition, wxSize(-1, 70),
-        wxTE_MULTILINE | wxTE_PROCESS_ENTER);
-    m_sendBtn = new wxButton(this, ID_CP_SEND, "Send");
+        wxTE_MULTILINE);
+    m_sendBtn = new wxButton(this, ID_CP_SEND, "Send (Ctrl+Enter)");
 
-    m_inputCtrl->Bind(wxEVT_TEXT_ENTER, [this](wxCommandEvent&) {
-        wxCommandEvent dummy(wxEVT_BUTTON, ID_CP_SEND);
-        OnSend(dummy);
+    m_inputCtrl->Bind(wxEVT_KEY_DOWN, [this](wxKeyEvent& e) {
+        if (e.GetKeyCode() == WXK_RETURN && e.ControlDown()) {
+            wxCommandEvent dummy(wxEVT_BUTTON, ID_CP_SEND);
+            OnSend(dummy);
+        } else {
+            e.Skip();
+        }
     });
 
     inputRow->Add(m_inputCtrl, 1, wxEXPAND | wxALL, 6);
@@ -167,7 +171,9 @@ void ChatPanel::OnSend(wxCommandEvent&) {
 
             ConversationTurn turn{question, answer};
             m_turns.push_back(turn);
-            AppendTurn(chatFile, 0, "Conversation", turn);
+            bool saved = AppendTurn(chatFile, 0, "Conversation", turn);
+            Logger::get().log("Chat turn saved=" + std::to_string(saved)
+                              + "  q=" + question.substr(0, 60));
             Render();
         });
     }).detach();

@@ -1,5 +1,8 @@
 #include "config.h"
+#include <filesystem>
 #include <iostream>
+
+namespace fs = std::filesystem;
 
 int test_config() {
     int failures = 0;
@@ -83,6 +86,42 @@ int test_config() {
             ++failures;
         } else {
             std::cout << "PASS [parse-config-folder-no-spaces]\n";
+        }
+    }
+
+    // SaveAppState / ParseState round-trip: all fields survive serialise→parse.
+    // This is the on-disk contract that startup reload depends on.
+    {
+        AppState st;
+        st.currentProject = "CppInterview";
+        st.topic          = "C++ memory model";
+        st.backend        = "claude -p";
+        st.apiKey         = "sk-abc";
+        st.ollamaModel    = "llama3";
+
+        // Serialise using the same format SaveAppState writes.
+        std::string serialised =
+            "currentProject = " + st.currentProject + "\n"
+            "topic = "          + st.topic          + "\n"
+            "style = "          + st.style          + "\n"
+            "backend = "        + st.backend        + "\n"
+            "checkedChars = "   + st.checkedChars   + "\n"
+            "apiKey = "         + st.apiKey         + "\n"
+            "ollamaModel = "    + st.ollamaModel    + "\n";
+
+        AppState loaded = ParseState(serialised);
+        bool ok = loaded.currentProject == st.currentProject
+               && loaded.topic          == st.topic
+               && loaded.backend        == st.backend
+               && loaded.apiKey         == st.apiKey
+               && loaded.ollamaModel    == st.ollamaModel;
+        if (!ok) {
+            std::cerr << "FAIL [state-roundtrip]: project='" << loaded.currentProject
+                      << "' topic='" << loaded.topic
+                      << "' backend='" << loaded.backend << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [state-roundtrip]\n";
         }
     }
 

@@ -152,5 +152,31 @@ int test_exam_meta() {
         fs::remove_all(dir);
     }
 
+    // RecordSession: multiline topic is stored as first line only
+    {
+        auto dir = fs::temp_directory_path() / "tt_meta_topic_trim";
+        fs::create_directories(dir);
+        EnsureExamMeta(dir.string());
+
+        SessionRecord rec;
+        rec.sessionFile    = "session_topic.md";
+        rec.startedAt      = "2026-05-16T10:00:00";
+        rec.topic          = "AWS S3 and IAM policies\nalso cover bucket policies\nand versioning";
+        rec.totalQuestions = 5;
+        RecordSession(dir.string(), rec);
+
+        auto meta = LoadExamMeta(dir.string());
+        bool ok = meta.sessions.size() == 1
+               && meta.sessions[0].topic == "AWS S3 and IAM policies";
+        if (!ok) {
+            std::cerr << "FAIL [exam-meta-topic-trim]: topic='"
+                      << (meta.sessions.empty() ? "" : meta.sessions[0].topic) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-meta-topic-trim]\n";
+        }
+        fs::remove_all(dir);
+    }
+
     return failures;
 }

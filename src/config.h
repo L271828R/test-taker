@@ -19,6 +19,7 @@ struct AppState {
 
     // Create tab form state
     std::string topic;
+    std::string instructions;
     std::string style;
     std::string backend;
     std::string checkedChars; // pipe-separated, e.g. "Einstein|Curie"
@@ -26,6 +27,9 @@ struct AppState {
     // Backend credentials (not secret — stored in plain-text state file)
     std::string apiKey;
     std::string ollamaModel;
+
+    // Last active session file (basename only); empty when session completed.
+    std::string lastSessionFile;
 };
 
 AppState ParseState(const std::string& content);

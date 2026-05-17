@@ -175,6 +175,63 @@ int test_session() {
         fs::remove(tmp);
     }
 
+    // SetTurnFlagged: can unflag a previously flagged turn
+    {
+        auto tmp = fs::temp_directory_path() / "test_session_unflag.md";
+        std::ofstream f(tmp);
+        f << "# Session\n\n:::session[Topic]\n"
+             "Q: Q1?\nA: A1.\nSCORE: correct\nFLAG: true\nEXPLANATION: Good.\n\n"
+             ":::\n";
+        f.close();
+
+        bool ok = SetTurnFlagged(tmp.string(), 0, false);
+        if (!ok) {
+            std::cerr << "FAIL [set-turn-unflagged]: SetTurnFlagged returned false\n";
+            ++failures;
+        } else {
+            auto loaded = LoadSession(tmp.string());
+            if (loaded.size() != 1 || loaded[0].flagged != false) {
+                std::cerr << "FAIL [set-turn-unflagged]: flag not cleared; got "
+                          << loaded[0].flagged << "\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [set-turn-unflagged]\n";
+            }
+        }
+        fs::remove(tmp);
+    }
+
+    // LoadSessionHeader: parses topic, difficulty, totalQuestions, backend from header
+    {
+        auto tmp = fs::temp_directory_path() / "test_session_header.md";
+        std::ofstream f(tmp);
+        f << "# C++ Interview — Session\n\n"
+             "**Topic:** C++ memory model\n"
+             "**Difficulty:** hard\n"
+             "**Questions:** 7\n"
+             "**Backend:** claude -p\n\n"
+             ":::session[Session]\n"
+             "Q: What is RAII?\nA: Resource management.\nSCORE: correct\nFLAG: false\nEXPLANATION: Good.\n\n"
+             ":::\n";
+        f.close();
+
+        SessionHeader hdr = LoadSessionHeader(tmp.string());
+        bool ok = hdr.topic          == "C++ memory model"
+               && hdr.difficulty     == "hard"
+               && hdr.totalQuestions == 7
+               && hdr.backend        == "claude -p";
+        if (!ok) {
+            std::cerr << "FAIL [load-session-header]: topic='" << hdr.topic
+                      << "' diff='" << hdr.difficulty
+                      << "' q=" << hdr.totalQuestions
+                      << " backend='" << hdr.backend << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [load-session-header]\n";
+        }
+        fs::remove(tmp);
+    }
+
     // LoadSession: returns empty vector when no :::session block exists
     {
         auto tmp = fs::temp_directory_path() / "test_session_empty.md";

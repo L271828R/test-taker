@@ -385,6 +385,13 @@ void ProjectPanel::RefreshProjects() {
         if (found.IsOk()) {
             m_treeCtrl->SelectItem(found);
             m_treeCtrl->EnsureVisible(found);
+
+            // Fire the activation callback so all tabs sync on startup.
+            auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(found));
+            if (tn && m_openCallback) {
+                std::string path = tn->path;
+                CallAfter([this, path]() { m_openCallback(path); });
+            }
         }
     }
 }

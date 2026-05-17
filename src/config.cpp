@@ -57,11 +57,24 @@ AppState ParseState(const std::string& content) {
         std::string val = trim(trimmed.substr(eq + 1));
         if      (key == "currentProject") st.currentProject = val;
         else if (key == "topic")          st.topic          = val;
+        else if (key == "instructions") {
+            // decode \\n back to newlines
+            std::string decoded;
+            for (std::size_t i = 0; i < val.size(); ++i) {
+                if (val[i] == '\\' && i + 1 < val.size() && val[i+1] == 'n') {
+                    decoded += '\n'; ++i;
+                } else {
+                    decoded += val[i];
+                }
+            }
+            st.instructions = decoded;
+        }
         else if (key == "style")          st.style          = val;
         else if (key == "backend")        st.backend        = val;
         else if (key == "checkedChars")   st.checkedChars   = val;
-        else if (key == "apiKey")         st.apiKey         = val;
-        else if (key == "ollamaModel")    st.ollamaModel    = val;
+        else if (key == "apiKey")         st.apiKey            = val;
+        else if (key == "ollamaModel")    st.ollamaModel       = val;
+        else if (key == "lastSessionFile") st.lastSessionFile  = val;
     }
     return st;
 }
@@ -80,11 +93,18 @@ void SaveAppState(const AppState& state) {
     std::string path = StatePath();
     if (path.empty()) return;
     std::ofstream f(path);
-    f << "currentProject = " << state.currentProject << "\n"
-      << "topic = "          << state.topic          << "\n"
-      << "style = "          << state.style          << "\n"
-      << "backend = "        << state.backend        << "\n"
-      << "checkedChars = "   << state.checkedChars   << "\n"
-      << "apiKey = "         << state.apiKey         << "\n"
-      << "ollamaModel = "    << state.ollamaModel    << "\n";
+    // encode newlines in instructions as \n for the single-line state file
+    std::string encodedInstr;
+    for (char c : state.instructions)
+        encodedInstr += (c == '\n') ? "\\n" : std::string(1, c);
+
+    f << "currentProject = "   << state.currentProject   << "\n"
+      << "topic = "            << state.topic            << "\n"
+      << "instructions = "     << encodedInstr           << "\n"
+      << "style = "            << state.style            << "\n"
+      << "backend = "          << state.backend          << "\n"
+      << "checkedChars = "     << state.checkedChars     << "\n"
+      << "apiKey = "           << state.apiKey           << "\n"
+      << "ollamaModel = "      << state.ollamaModel      << "\n"
+      << "lastSessionFile = "  << state.lastSessionFile  << "\n";
 }
