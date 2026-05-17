@@ -148,22 +148,31 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput) {
 }
 
 // ---------------------------------------------------------------------------
-std::string RenderExamTurns(const std::vector<QuestionTurn>& turns) {
+std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
+                             const std::vector<int>&          chatCounts) {
     std::ostringstream out;
 
     out << R"(<style>
 .turn { border-bottom:1px solid var(--border); margin-bottom:1.2em;
-        padding-bottom:1em; border-radius:6px; padding:0.8em;
-        transition:background 0.15s; position:relative; }
+        border-radius:6px; padding:0.8em;
+        transition:background 0.15s; }
 .turn:hover { background:var(--surface); }
+.turn-toolbar { display:flex; gap:0.4em; margin-bottom:0.6em; }
 .turn:hover .flag-btn { opacity:1; }
-.flag-btn { position:absolute; top:0.6em; right:0.6em;
+.turn:hover .note-btn { opacity:1; }
+.turn:hover .discuss-btn { opacity:1; }
+.flag-btn, .note-btn, .discuss-btn {
             opacity:0; transition:opacity 0.15s;
             background:none; border:1px solid var(--border);
             border-radius:4px; padding:0.15em 0.5em;
-            font-size:0.85em; cursor:pointer; color:var(--text-muted);
-            text-decoration:none; }
+            font-size:0.82em; cursor:pointer; color:var(--text-muted);
+            text-decoration:none; white-space:nowrap; }
 .flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
+.note-btn.has-note { color:var(--link); border-color:var(--link); opacity:1; }
+.discuss-btn.has-chat { color:var(--link); border-color:var(--link); opacity:1; }
+.turn-note { margin-top:0.5em; padding:0.4em 0.6em;
+             background:var(--surface); border-left:3px solid var(--link);
+             font-size:0.9em; color:var(--text-muted); white-space:pre-wrap; }
 .question { font-weight:600; margin-bottom:.4em; }
 .answer { color:var(--text-muted); margin-bottom:.3em; font-style:italic; }
 .verdict { display:inline-block; padding:.15em .6em; border-radius:4px;
@@ -184,18 +193,33 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns) {
             t.score == Score::Missed  ? "missed"  : "skipped";
         std::string flagClass = t.flagged ? " flagged" : "";
         std::string flagLabel = t.flagged ? "⚑ flagged" : "⚑ flag";
+        std::string noteClass = t.note.empty() ? "" : " has-note";
+        std::string noteLabel = t.note.empty() ? "✎ note" : "✎ note";
+        int chatCount = (i < (int)chatCounts.size()) ? chatCounts[i] : 0;
+        std::string discussClass = chatCount > 0 ? " has-chat" : "";
+        std::string discussLabel = chatCount > 0
+            ? "&#x1F4AC; " + std::to_string(chatCount)
+            : "&#x1F4AC; discuss";
 
         out << "<div class='turn'>"
+            << "<div class='turn-toolbar'>"
+            << "<a class='discuss-btn" << discussClass << "' href='testtaker://discuss/"
+            << i << "'>" << discussLabel << "</a>"
+            << "<a class='note-btn" << noteClass << "' href='testtaker://note/"
+            << i << "'>" << noteLabel << "</a>"
             << "<a class='flag-btn" << flagClass << "' href='testtaker://flag/"
             << i << "'>" << flagLabel << "</a>"
+            << "</div>"
             << "<div class='question'>" << RenderMarkdown(t.question) << "</div>"
             << "<div class='answer'><strong>Your answer:</strong> "
             << EscapeHTML(t.userAnswer.empty() ? "(skipped)" : t.userAnswer)
             << "</div>"
             << "<div class='verdict " << scoreClass << "'>"
             << ScoreLabel(t.score) << "</div>"
-            << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>"
-            << "</div>\n";
+            << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>";
+        if (!t.note.empty())
+            out << "<div class='turn-note'>" << EscapeHTML(t.note) << "</div>";
+        out << "</div>\n";
     }
 
     return out.str();

@@ -87,6 +87,7 @@ set(SOURCES
     src/app_frame.cpp
     src/new_session_panel.cpp
     src/exam_panel.cpp
+    src/turn_chat_panel.cpp
     src/review_panel.cpp
     src/chat_panel.cpp
     src/project_panel.cpp
@@ -105,6 +106,7 @@ set(SOURCES
     src/session.cpp
     src/exam_meta.cpp
     src/exam_prompt.cpp
+    src/turn_chat.cpp
     src/inspector.mm
 )
 add_executable(test-taker ${SOURCES})
@@ -133,6 +135,7 @@ add_executable(test_test-taker
     tests/test_session.cpp
     tests/test_exam_meta.cpp
     tests/test_exam_prompt.cpp
+    tests/test_turn_chat.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -149,6 +152,7 @@ add_executable(test_test-taker
     src/session.cpp
     src/exam_meta.cpp
     src/exam_prompt.cpp
+    src/turn_chat.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})

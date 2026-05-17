@@ -2,7 +2,6 @@
 #include "html_template.h"
 #include "exam_prompt.h"
 #include "markdown.h"
-#include "config.h"
 #include "logger.h"
 #include <sstream>
 #include <thread>
@@ -26,16 +25,33 @@ ExamPanel::ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
-    m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
-    outer->Add(m_webView, 1, wxEXPAND);
+    // ── Splitter: left = exam view, right = side chat ─────────────────────
+    m_splitter = new wxSplitterWindow(this, wxID_ANY,
+                                      wxDefaultPosition, wxDefaultSize,
+                                      wxSP_3D | wxSP_LIVE_UPDATE);
+    m_splitter->SetMinimumPaneSize(200);
+
+    m_leftPanel = new wxPanel(m_splitter);
+    auto* leftSizer = new wxBoxSizer(wxVERTICAL);
+
+    m_webView = wxWebView::New(m_leftPanel, wxID_ANY, "about:blank");
+    m_webView->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent& evt) {
+        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+        evt.Skip();
+    });
+    leftSizer->Add(m_webView, 1, wxEXPAND);
 
     // ── Answer input row ──────────────────────────────────────────────────
     auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
-    m_answerCtrl = new wxTextCtrl(this, wxID_ANY, "",
+    m_answerCtrl = new wxTextCtrl(m_leftPanel, wxID_ANY, "",
         wxDefaultPosition, wxSize(-1, 80), wxTE_MULTILINE | wxTE_PROCESS_ENTER);
-    m_sendBtn = new wxButton(this, ID_EXAM_SEND, "Submit");
-    m_skipBtn = new wxButton(this, ID_EXAM_SKIP, "I don't know");
-    m_flagBtn = new wxButton(this, ID_EXAM_FLAG, "Flag for review");
+    m_answerCtrl->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent& evt) {
+        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+        evt.Skip();
+    });
+    m_sendBtn = new wxButton(m_leftPanel, ID_EXAM_SEND, "Submit");
+    m_skipBtn = new wxButton(m_leftPanel, ID_EXAM_SKIP, "I don't know");
+    m_flagBtn = new wxButton(m_leftPanel, ID_EXAM_FLAG, "Flag for review");
 
     inputRow->Add(m_answerCtrl, 1, wxEXPAND | wxRIGHT, 4);
     auto* btnCol = new wxBoxSizer(wxVERTICAL);
@@ -44,11 +60,22 @@ ExamPanel::ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete
     btnCol->Add(m_flagBtn, 0, wxEXPAND);
     inputRow->Add(btnCol, 0, wxEXPAND);
 
-    m_statusLabel = new wxStaticText(this, wxID_ANY, "");
+    m_statusLabel = new wxStaticText(m_leftPanel, wxID_ANY, "");
 
-    outer->Add(inputRow, 0, wxEXPAND | wxALL, 6);
-    outer->Add(m_statusLabel, 0, wxLEFT | wxBOTTOM, 8);
+    leftSizer->Add(inputRow, 0, wxEXPAND | wxALL, 6);
+    leftSizer->Add(m_statusLabel, 0, wxLEFT | wxBOTTOM, 8);
+    m_leftPanel->SetSizer(leftSizer);
 
+    m_chatPanel = new TurnChatPanel(m_splitter, m_darkMode, [this]() {
+        m_chatOpen = false;
+        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+        Render();
+    });
+
+    // Start unsplit — chat opens when the user clicks Discuss
+    m_splitter->Initialize(m_leftPanel);
+
+    outer->Add(m_splitter, 1, wxEXPAND);
     SetSizer(outer);
 
     // Start idle — no active session yet.
@@ -78,6 +105,10 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_sendBtn->Enable();
     m_skipBtn->Enable();
     m_flagBtn->Disable(); // enabled after first question is answered
+
+    m_chatOpen = false;
+    m_chatPanel->Reset();
+    if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
 
     RequestFirstQuestion();
 }
@@ -296,17 +327,13 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_skipBtn->Enable();
                 m_answerCtrl->Clear();
             } else {
-                // Session complete — clear last session so restart doesn't resume it
+                // Session complete — keep lastSessionFile so Exam tab can show
+                // the completed turns read-only on next startup.
                 m_active          = false;
                 m_currentQuestion.clear();
                 m_statusLabel->SetLabel("Session complete! See Review tab for results.");
                 m_sendBtn->Disable();
                 m_skipBtn->Disable();
-                {
-                    AppState st = LoadAppState();
-                    st.lastSessionFile.clear();
-                    SaveAppState(st);
-                }
                 if (m_onComplete) m_onComplete(m_sessionFile);
             }
             Render();
@@ -328,7 +355,14 @@ std::string ExamPanel::BuildExamHTML() const {
         body << "<p style='color:var(--text-muted);margin-top:2em'>"
                 "No active session. Go to <strong>New Session</strong> to start.</p>";
     } else {
-        body << RenderExamTurns(m_turns);
+        // Load chat counts for each completed turn so the discuss button can
+        // show a badge when a turn already has follow-up exchanges.
+        std::vector<int> chatCounts;
+        chatCounts.reserve(m_turns.size());
+        for (int i = 0; i < (int)m_turns.size(); ++i)
+            chatCounts.push_back((int)LoadTurnChat(m_sessionFile, i).size());
+
+        body << RenderExamTurns(m_turns, chatCounts);
 
         if (!m_currentQuestion.empty()) {
             body << "<div class='current-question'>"
@@ -345,9 +379,18 @@ std::string ExamPanel::BuildExamHTML() const {
                     border-radius:6px; padding:1em; margin-top:1.5em;
                     font-size:1.05em; }
 .done { color:var(--text-muted); margin-top:1.5em; }
+#chat-overlay { display:none; position:fixed; inset:0; z-index:9999;
+                cursor:pointer; background:transparent; }
+#chat-overlay.active { display:block; }
 </style>
 )";
-    return BuildHTML(extraCSS + body.str(), "Exam", m_darkMode);
+
+    std::string overlay;
+    if (m_chatOpen)
+        overlay = "<div id='chat-overlay' class='active' "
+                  "onclick=\"window.location='testtaker://closechat'\"></div>";
+
+    return BuildHTML(extraCSS + overlay + body.str(), "Exam", m_darkMode);
 }
 
 // ---------------------------------------------------------------------------
@@ -372,24 +415,68 @@ void ExamPanel::OnFlag(wxCommandEvent&) {
 
 void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
     wxString url = evt.GetURL();
-    if (!url.StartsWith("testtaker://flag/")) {
-        evt.Skip();
+
+    if (url.StartsWith("testtaker://flag/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(17).ToLong(&idx);  // "testtaker://flag/" is 17 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+
+        m_turns[idx].flagged = !m_turns[idx].flagged;
+        SetTurnFlagged(m_sessionFile, idx, m_turns[idx].flagged);
+        Logger::get().log("Turn " + std::to_string(idx)
+                          + " flagged=" + std::to_string(m_turns[idx].flagged));
+
+        if (idx == (long)m_turns.size() - 1)
+            m_flagBtn->SetLabel(m_turns[idx].flagged ? "Unflag" : "Flag for review");
+
+        Render();
         return;
     }
-    evt.Veto(); // prevent actual navigation
 
-    long idx = -1;
-    url.Mid(17).ToLong(&idx);  // "testtaker://flag/" is 17 chars
-    if (idx < 0 || idx >= (long)m_turns.size()) return;
+    if (url.StartsWith("testtaker://discuss/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(20).ToLong(&idx);  // "testtaker://discuss/" is 20 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
 
-    m_turns[idx].flagged = !m_turns[idx].flagged;
-    SetTurnFlagged(m_sessionFile, idx, m_turns[idx].flagged);
-    Logger::get().log("Turn " + std::to_string(idx)
-                      + " flagged=" + std::to_string(m_turns[idx].flagged));
+        m_chatPanel->OpenTurn(m_turns[idx], (int)idx, m_sessionFile, m_llmCfg);
 
-    // Keep the Flag button label in sync if this was the last turn.
-    if (idx == (long)m_turns.size() - 1)
-        m_flagBtn->SetLabel(m_turns[idx].flagged ? "Unflag" : "Flag for review");
+        if (!m_splitter->IsSplit()) {
+            int w = m_splitter->GetClientSize().GetWidth();
+            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+        }
+        m_chatOpen = true;
+        Render();
+        return;
+    }
 
-    Render();
+    if (url == "testtaker://closechat") {
+        evt.Veto();
+        m_chatOpen = false;
+        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+        Render();
+        return;
+    }
+
+    if (url.StartsWith("testtaker://note/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(17).ToLong(&idx);  // "testtaker://note/" is 17 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+
+        wxString current = wxString::FromUTF8(m_turns[idx].note);
+        wxTextEntryDialog dlg(this, "Your note for this question:", "Add Note", current,
+                              wxOK | wxCANCEL | wxTE_MULTILINE);
+        if (dlg.ShowModal() != wxID_OK) return;
+
+        std::string note = dlg.GetValue().ToStdString();
+        m_turns[idx].note = note;
+        SetTurnNote(m_sessionFile, idx, note);
+        Logger::get().log("Turn " + std::to_string(idx) + " note set");
+        Render();
+        return;
+    }
+
+    evt.Skip();
 }

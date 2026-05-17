@@ -4,8 +4,10 @@
 #include <vector>
 #include <wx/wx.h>
 #include <wx/webview.h>
+#include <wx/splitter.h>
 #include "session.h"
 #include "exam_prompt.h"
+#include "turn_chat_panel.h"
 #include "config.h"
 #include "llm.h"
 
@@ -42,6 +44,7 @@ private:
 
     bool              m_active        = false;
     bool              m_busy          = false;
+    bool              m_chatOpen      = false;
     std::string       m_projectDir;
     std::string       m_sessionFile;
     ExamConfig        m_cfg;
@@ -51,12 +54,15 @@ private:
     std::string       m_currentQuestion;
     std::vector<QuestionTurn> m_turns;
 
-    wxWebView*  m_webView    = nullptr;
-    wxTextCtrl* m_answerCtrl = nullptr;
-    wxButton*   m_sendBtn    = nullptr;
-    wxButton*   m_skipBtn    = nullptr;
-    wxButton*   m_flagBtn    = nullptr;
-    wxStaticText* m_statusLabel = nullptr;
+    wxSplitterWindow* m_splitter     = nullptr;
+    wxPanel*          m_leftPanel    = nullptr;
+    TurnChatPanel*    m_chatPanel    = nullptr;
+    wxWebView*        m_webView      = nullptr;
+    wxTextCtrl*       m_answerCtrl   = nullptr;
+    wxButton*         m_sendBtn      = nullptr;
+    wxButton*         m_skipBtn      = nullptr;
+    wxButton*         m_flagBtn      = nullptr;
+    wxStaticText*     m_statusLabel  = nullptr;
 
     void RequestFirstQuestion();
     void RequestNextQuestion();

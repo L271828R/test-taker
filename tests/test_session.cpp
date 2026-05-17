@@ -71,6 +71,28 @@ int test_session() {
         }
     }
 
+    // ParseSession / SerializeSessionBody roundtrip with multi-line answer
+    {
+        QuestionTurn t;
+        t.question   = "Explain stack vs heap.";
+        t.userAnswer = "Stack is fast and LIFO.\nHeap is dynamic and larger.\nUse smart pointers.";
+        t.score      = Score::Partial;
+        t.explanation = "Good, but missed deallocation details.";
+        t.flagged    = false;
+
+        std::string body = SerializeSessionBody({t});
+        auto reparsed = ParseSession(body);
+        bool ok = reparsed.size() == 1
+               && reparsed[0].userAnswer == t.userAnswer;
+        if (!ok) {
+            std::cerr << "FAIL [session-multiline-answer]: got '"
+                      << (reparsed.empty() ? "(empty)" : reparsed[0].userAnswer) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [session-multiline-answer]\n";
+        }
+    }
+
     // AppendSessionTurn: creates :::session block when file has none
     {
         auto tmp = fs::temp_directory_path() / "test_session_append_new.md";
@@ -245,6 +267,109 @@ int test_session() {
             ++failures;
         } else {
             std::cout << "PASS [load-session-empty]\n";
+        }
+        fs::remove(tmp);
+    }
+
+    // A completed session (turns == totalQuestions) must be detectable on reload
+    // so the Exam tab can display it read-only after restart.
+    // ResumeSession determines completeness via: turns.size() >= hdr.totalQuestions.
+    {
+        auto tmp = fs::temp_directory_path() / "test_session_complete.md";
+        std::ofstream f(tmp);
+        f << "# C++ Interview\n\n"
+             "**Topic:** C++ basics\n"
+             "**Difficulty:** mixed\n"
+             "**Questions:** 2\n"
+             "**Backend:** claude -p\n\n"
+             ":::session[Session]\n"
+             "Q: What is RAII?\nA: Resource management.\nSCORE: correct\nFLAG: false\nEXPLANATION: Good.\n\n"
+             "Q: Explain move semantics.\nA: Transfer ownership.\nSCORE: correct\nFLAG: false\nEXPLANATION: Good.\n\n"
+             ":::\n";
+        f.close();
+
+        auto turns = LoadSession(tmp.string());
+        auto hdr   = LoadSessionHeader(tmp.string());
+        bool complete = (int)turns.size() >= hdr.totalQuestions;
+        if (!complete || turns.size() != 2 || hdr.totalQuestions != 2) {
+            std::cerr << "FAIL [session-complete-detectable]: turns=" << turns.size()
+                      << " totalQ=" << hdr.totalQuestions
+                      << " complete=" << complete << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [session-complete-detectable]\n";
+        }
+        fs::remove(tmp);
+    }
+
+    // note field: roundtrip via ParseSession / SerializeSessionBody
+    {
+        QuestionTurn t;
+        t.question    = "What is RAII?";
+        t.userAnswer  = "Resource management.";
+        t.score       = Score::Correct;
+        t.explanation = "Good.";
+        t.flagged     = false;
+        t.note        = "Remember: scope-bound cleanup.";
+
+        std::string body = SerializeSessionBody({t});
+        auto reparsed = ParseSession(body);
+        bool ok = reparsed.size() == 1
+               && reparsed[0].note == "Remember: scope-bound cleanup.";
+        if (!ok) {
+            std::cerr << "FAIL [note-roundtrip]: got note='"
+                      << (reparsed.empty() ? "(empty)" : reparsed[0].note) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [note-roundtrip]\n";
+        }
+    }
+
+    // note field: empty note is preserved (not written / defaults to empty on parse)
+    {
+        QuestionTurn t;
+        t.question = "Q?"; t.userAnswer = "A.";
+        t.score = Score::Correct; t.explanation = "E.";
+        t.flagged = false; t.note = "";
+
+        std::string body = SerializeSessionBody({t});
+        auto reparsed = ParseSession(body);
+        bool ok = reparsed.size() == 1 && reparsed[0].note.empty();
+        if (!ok) {
+            std::cerr << "FAIL [note-empty]: got note='"
+                      << (reparsed.empty() ? "(empty)" : reparsed[0].note) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [note-empty]\n";
+        }
+    }
+
+    // SetTurnNote: persists a note to the session file
+    {
+        auto tmp = fs::temp_directory_path() / "test_session_note.md";
+        std::ofstream f(tmp);
+        f << "# Session\n\n:::session[Topic]\n"
+             "Q: Q1?\nA: A1.\nSCORE: correct\nFLAG: false\nEXPLANATION: Good.\n\n"
+             "Q: Q2?\nA: A2.\nSCORE: missed\nFLAG: false\nEXPLANATION: Wrong.\n\n"
+             ":::\n";
+        f.close();
+
+        bool ok = SetTurnNote(tmp.string(), 1, "I always confuse this.");
+        if (!ok) {
+            std::cerr << "FAIL [set-turn-note]: SetTurnNote returned false\n";
+            ++failures;
+        } else {
+            auto loaded = LoadSession(tmp.string());
+            bool noteOk = loaded.size() == 2
+                       && loaded[0].note.empty()
+                       && loaded[1].note == "I always confuse this.";
+            if (!noteOk) {
+                std::cerr << "FAIL [set-turn-note]: note0='" << loaded[0].note
+                          << "' note1='" << loaded[1].note << "'\n";
+                ++failures;
+            } else {
+                std::cout << "PASS [set-turn-note]\n";
+            }
         }
         fs::remove(tmp);
     }

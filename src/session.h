@@ -10,6 +10,7 @@ struct QuestionTurn {
     Score       score       = Score::Skipped;
     std::string explanation;
     bool        flagged     = false;
+    std::string note;
 };
 
 // Parse/serialize the body of a :::session[...] block.
@@ -28,6 +29,11 @@ bool AppendSessionTurn(const std::string& filePath, const QuestionTurn& turn);
 // Rewrites the whole :::session block in place.
 // Returns false on I/O error or out-of-range index.
 bool SetTurnFlagged(const std::string& filePath, int index, bool flagged);
+
+// Set the note field on the turn at zero-based index.
+// Rewrites the whole :::session block in place.
+// Returns false on I/O error or out-of-range index.
+bool SetTurnNote(const std::string& filePath, int index, const std::string& note);
 
 Score       ScoreFromString(const std::string& s);
 std::string ScoreToString(Score s);

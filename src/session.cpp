@@ -1,6 +1,35 @@
 #include "session.h"
 #include <fstream>
+#include <functional>
 #include <sstream>
+
+// Encode embedded newlines as the two-character sequence \n so every field
+// occupies exactly one line in the serialized format.
+static std::string encodeNewlines(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\') { out += "\\\\"; }
+        else if (c == '\n') { out += "\\n"; }
+        else { out += c; }
+    }
+    return out;
+}
+
+static std::string decodeNewlines(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            if (s[i+1] == 'n')  { out += '\n'; ++i; }
+            else if (s[i+1] == '\\') { out += '\\'; ++i; }
+            else { out += s[i]; }
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
 
 // ---------------------------------------------------------------------------
 Score ScoreFromString(const std::string& s) {
@@ -52,15 +81,17 @@ std::vector<QuestionTurn> ParseSession(const std::string& body) {
             if (inTurn) turns.push_back(cur);
             cur     = {};
             inTurn  = true;
-            cur.question = line.substr(3);
+            cur.question = decodeNewlines(line.substr(3));
         } else if (inTurn && line.rfind("A: ", 0) == 0) {
-            cur.userAnswer = line.substr(3);
+            cur.userAnswer = decodeNewlines(line.substr(3));
         } else if (inTurn && line.rfind("SCORE: ", 0) == 0) {
             cur.score = ScoreFromString(line.substr(7));
         } else if (inTurn && line.rfind("FLAG: ", 0) == 0) {
             cur.flagged = (line.substr(6) == "true");
         } else if (inTurn && line.rfind("EXPLANATION: ", 0) == 0) {
-            cur.explanation = line.substr(13);
+            cur.explanation = decodeNewlines(line.substr(13));
+        } else if (inTurn && line.rfind("NOTE: ", 0) == 0) {
+            cur.note = decodeNewlines(line.substr(6));
         }
     }
     if (inTurn) turns.push_back(cur);
@@ -71,11 +102,13 @@ std::vector<QuestionTurn> ParseSession(const std::string& body) {
 std::string SerializeSessionBody(const std::vector<QuestionTurn>& turns) {
     std::ostringstream out;
     for (const auto& t : turns) {
-        out << "Q: "           << t.question    << "\n";
-        out << "A: "           << t.userAnswer  << "\n";
+        out << "Q: "           << encodeNewlines(t.question)    << "\n";
+        out << "A: "           << encodeNewlines(t.userAnswer)  << "\n";
         out << "SCORE: "       << ScoreToString(t.score) << "\n";
         out << "FLAG: "        << (t.flagged ? "true" : "false") << "\n";
-        out << "EXPLANATION: " << t.explanation << "\n";
+        out << "EXPLANATION: " << encodeNewlines(t.explanation) << "\n";
+        if (!t.note.empty())
+            out << "NOTE: " << encodeNewlines(t.note) << "\n";
         out << "\n";
     }
     return out.str();
@@ -168,7 +201,8 @@ bool AppendSessionTurn(const std::string& filePath, const QuestionTurn& turn) {
 }
 
 // ---------------------------------------------------------------------------
-bool SetTurnFlagged(const std::string& filePath, int index, bool flagged) {
+static bool RewriteTurns(const std::string& filePath,
+                         std::function<void(std::vector<QuestionTurn>&)> mutate) {
     std::string content = readFile(filePath);
     if (content.empty()) return false;
 
@@ -184,15 +218,28 @@ bool SetTurnFlagged(const std::string& filePath, int index, bool flagged) {
 
     std::string body = content.substr(bodyStart, closeNl + 1 - bodyStart);
     auto turns = ParseSession(body);
-    if (index < 0 || index >= (int)turns.size()) return false;
 
-    turns[index].flagged = flagged;
+    mutate(turns);
+
     std::string newBody = SerializeSessionBody(turns);
-
-    // Rebuild: header + newBody + closing :::
-    std::string header = content.substr(sessPos, bodyStart - sessPos);
-    std::string tail   = content.substr(closeNl + 1); // starts at :::
+    std::string header  = content.substr(sessPos, bodyStart - sessPos);
+    std::string tail    = content.substr(closeNl + 1);
     content = content.substr(0, sessPos) + header + newBody + tail;
-
     return writeFile(filePath, content);
+}
+
+// ---------------------------------------------------------------------------
+bool SetTurnFlagged(const std::string& filePath, int index, bool flagged) {
+    return RewriteTurns(filePath, [index, flagged](std::vector<QuestionTurn>& turns) {
+        if (index >= 0 && index < (int)turns.size())
+            turns[index].flagged = flagged;
+    });
+}
+
+// ---------------------------------------------------------------------------
+bool SetTurnNote(const std::string& filePath, int index, const std::string& note) {
+    return RewriteTurns(filePath, [index, &note](std::vector<QuestionTurn>& turns) {
+        if (index >= 0 && index < (int)turns.size())
+            turns[index].note = note;
+    });
 }

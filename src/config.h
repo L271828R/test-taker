@@ -28,7 +28,8 @@ struct AppState {
     std::string apiKey;
     std::string ollamaModel;
 
-    // Last active session file (basename only); empty when session completed.
+    // Last active session file (basename only); kept even when session is complete
+    // so the Exam tab can display completed turns read-only on next startup.
     std::string lastSessionFile;
 };
 

@@ -39,5 +39,7 @@ struct ScoredResponse {
 ScoredResponse ParseScoredResponse(const std::string& llmOutput);
 
 // Render completed turns as HTML body fragment.
-// Each turn gets a hover-highlight and a testtaker://flag/N link to toggle its flag.
-std::string RenderExamTurns(const std::vector<QuestionTurn>& turns);
+// chatCounts[i] is the number of chat exchanges for turn i (0 = no chats yet).
+// Each turn gets a hover-highlight and testtaker://flag/N, note/N, discuss/N links.
+std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
+                             const std::vector<int>&          chatCounts);

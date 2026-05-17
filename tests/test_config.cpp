@@ -93,35 +93,54 @@ int test_config() {
     // This is the on-disk contract that startup reload depends on.
     {
         AppState st;
-        st.currentProject = "CppInterview";
-        st.topic          = "C++ memory model";
-        st.backend        = "claude -p";
-        st.apiKey         = "sk-abc";
-        st.ollamaModel    = "llama3";
+        st.currentProject  = "CppInterview";
+        st.topic           = "C++ memory model";
+        st.backend         = "claude -p";
+        st.apiKey          = "sk-abc";
+        st.ollamaModel     = "llama3";
+        st.lastSessionFile = "session_20260517_132731.md";
 
         // Serialise using the same format SaveAppState writes.
         std::string serialised =
-            "currentProject = " + st.currentProject + "\n"
-            "topic = "          + st.topic          + "\n"
-            "style = "          + st.style          + "\n"
-            "backend = "        + st.backend        + "\n"
-            "checkedChars = "   + st.checkedChars   + "\n"
-            "apiKey = "         + st.apiKey         + "\n"
-            "ollamaModel = "    + st.ollamaModel    + "\n";
+            "currentProject = "  + st.currentProject  + "\n"
+            "topic = "           + st.topic           + "\n"
+            "style = "           + st.style           + "\n"
+            "backend = "         + st.backend         + "\n"
+            "checkedChars = "    + st.checkedChars    + "\n"
+            "apiKey = "          + st.apiKey          + "\n"
+            "ollamaModel = "     + st.ollamaModel     + "\n"
+            "lastSessionFile = " + st.lastSessionFile + "\n";
 
         AppState loaded = ParseState(serialised);
-        bool ok = loaded.currentProject == st.currentProject
-               && loaded.topic          == st.topic
-               && loaded.backend        == st.backend
-               && loaded.apiKey         == st.apiKey
-               && loaded.ollamaModel    == st.ollamaModel;
+        bool ok = loaded.currentProject  == st.currentProject
+               && loaded.topic           == st.topic
+               && loaded.backend         == st.backend
+               && loaded.apiKey          == st.apiKey
+               && loaded.ollamaModel     == st.ollamaModel
+               && loaded.lastSessionFile == st.lastSessionFile;
         if (!ok) {
             std::cerr << "FAIL [state-roundtrip]: project='" << loaded.currentProject
                       << "' topic='" << loaded.topic
-                      << "' backend='" << loaded.backend << "'\n";
+                      << "' backend='" << loaded.backend
+                      << "' lastSessionFile='" << loaded.lastSessionFile << "'\n";
             ++failures;
         } else {
             std::cout << "PASS [state-roundtrip]\n";
+        }
+    }
+
+    // ParseState reads lastSessionFile (completed sessions must be retained).
+    {
+        AppState st = ParseState(
+            "currentProject = CppInterview\n"
+            "lastSessionFile = session_20260517_132731.md\n");
+        bool ok = st.lastSessionFile == "session_20260517_132731.md";
+        if (!ok) {
+            std::cerr << "FAIL [state-last-session-file]: got '"
+                      << st.lastSessionFile << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [state-last-session-file]\n";
         }
     }
 

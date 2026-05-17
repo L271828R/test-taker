@@ -193,7 +193,7 @@ int test_exam_prompt() {
         turns.push_back(t0);
         turns.push_back(t1);
 
-        std::string html = RenderExamTurns(turns);
+        std::string html = RenderExamTurns(turns, {0, 0});
         bool hasFlag0    = html.find("testtaker://flag/0") != std::string::npos;
         bool hasFlag1    = html.find("testtaker://flag/1") != std::string::npos;
         bool flagged1    = html.find("flagged") != std::string::npos;
@@ -207,6 +207,65 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [render-exam-turns-flag-links]\n";
+        }
+    }
+
+    // RenderExamTurns: each turn has a note link; note text shown when present
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question = "What is RAII?"; t0.userAnswer = "Resource management.";
+        t0.score = Score::Correct; t0.flagged = false; t0.note = "";
+        QuestionTurn t1;
+        t1.question = "What is a vtable?"; t1.userAnswer = "Virtual dispatch table.";
+        t1.score = Score::Missed; t1.flagged = false;
+        t1.note = "Remember: vtable is per class, not per object.";
+        turns.push_back(t0);
+        turns.push_back(t1);
+
+        std::string html = RenderExamTurns(turns, {0, 0});
+        bool hasNote0    = html.find("testtaker://note/0") != std::string::npos;
+        bool hasNote1    = html.find("testtaker://note/1") != std::string::npos;
+        bool noteText    = html.find("vtable is per class") != std::string::npos;
+
+        if (!hasNote0 || !hasNote1 || !noteText) {
+            std::cerr << "FAIL [render-exam-turns-note-links]:"
+                      << " note0=" << hasNote0 << " note1=" << hasNote1
+                      << " noteText=" << noteText << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-exam-turns-note-links]\n";
+        }
+    }
+
+    // RenderExamTurns: discuss button shows chat count badge when > 0
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question = "What is RAII?"; t0.userAnswer = "Resource management.";
+        t0.score = Score::Correct; t0.flagged = false;
+        QuestionTurn t1;
+        t1.question = "What is a vtable?"; t1.userAnswer = "Virtual dispatch table.";
+        t1.score = Score::Missed; t1.flagged = false;
+        turns.push_back(t0);
+        turns.push_back(t1);
+
+        // t0 has 0 chats, t1 has 3
+        std::string html = RenderExamTurns(turns, {0, 3});
+
+        // t1's discuss button should show the count and have an active style
+        bool hasCount  = html.find("3") != std::string::npos;
+        bool hasActive = html.find("has-chat") != std::string::npos;
+        // t0 should NOT show a count (0 chats)
+        bool t0NoCount = html.find("discuss/0\">&#x1F4AC; discuss</a>") != std::string::npos
+                      || html.find("discuss/0") != std::string::npos;
+
+        if (!hasCount || !hasActive) {
+            std::cerr << "FAIL [render-exam-turns-chat-count]:"
+                      << " hasCount=" << hasCount << " hasActive=" << hasActive << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-exam-turns-chat-count]\n";
         }
     }
 
