@@ -9,6 +9,7 @@ struct ExamConfig {
     std::string difficulty;      // "easy" | "medium" | "hard" | "mixed"
     std::string projectContext;  // contents of context.md, injected verbatim
     int         totalQuestions = 10;
+    bool        useCorpus      = false; // when true, corpus chunks are retrieved and injected
 };
 
 // Build the first prompt: asks LLM to generate question #1.

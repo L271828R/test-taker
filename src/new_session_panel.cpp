@@ -187,6 +187,14 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
+    // ── Corpus toggle (shown only when corpus.db exists for the project) ──
+    {
+        m_useCorpusCheck = new wxCheckBox(this, wxID_ANY,
+            "Use corpus for context (RAG) — retrieve relevant passages before each session");
+        m_corpusSizer = inner->Add(m_useCorpusCheck, 0, wxBOTTOM, 10);
+        m_corpusSizer->Show(false);
+    }
+
     // ── Start button ──────────────────────────────────────────────────────
     {
         auto* row = new wxBoxSizer(wxHORIZONTAL);
@@ -213,14 +221,41 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
 
 // ---------------------------------------------------------------------------
 void NewSessionPanel::SyncProject(const std::string& projectDir) {
+    bool projectChanged = (projectDir != m_activeProjectDir);
     m_activeProjectDir = projectDir;
+
     if (projectDir.empty()) {
         m_projectLabel->SetLabel("(none — activate a project first)");
+        m_corpusSizer->Show(false);
     } else {
         m_projectLabel->SetLabel(wxString::FromUTF8(
             fs::path(projectDir).filename().string()));
-        RestoreFormState();
+
+        bool hasCorpus = fs::exists(projectDir + "/corpus.db");
+        m_corpusSizer->Show(hasCorpus);
+        if (hasCorpus) m_useCorpusCheck->SetValue(true);
+
+        if (projectChanged) {
+            // Different project: start with blank topic and instructions so that
+            // session-specific state from the previous project (e.g. C++ focus) doesn't
+            // bleed in.  Only restore the backend/credentials which are truly global.
+            m_topicCtrl->Clear();
+            m_instrCtrl->Clear();
+            AppState st = LoadAppState();
+            if (!st.backend.empty()) {
+                int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
+                if (idx != wxNOT_FOUND) {
+                    m_backendChoice->SetSelection(idx);
+                    UpdateBackendFields();
+                }
+            }
+            if (!st.apiKey.empty())     m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));
+            if (!st.ollamaModel.empty()) m_ollamaModel->SetValue(wxString::FromUTF8(st.ollamaModel));
+        } else {
+            RestoreFormState();
+        }
     }
+    if (GetSizer()) GetSizer()->Layout();
 }
 
 // ---------------------------------------------------------------------------
@@ -330,6 +365,7 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     cfg.difficulty     = m_difficultyCtrl->GetString(
         m_difficultyCtrl->GetSelection()).ToStdString();
     cfg.totalQuestions = m_countCtrl->GetValue();
+    cfg.useCorpus      = m_corpusSizer->IsShown() && m_useCorpusCheck->GetValue();
 
     // Load context.md if present
     std::string ctxPath = m_activeProjectDir + "/context.md";

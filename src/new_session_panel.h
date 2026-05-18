@@ -34,8 +34,10 @@ private:
     wxComboBox*   m_ollamaModel    = nullptr;
     wxSizerItem*  m_apiKeySizer    = nullptr;
     wxSizerItem*  m_ollamaSizer    = nullptr;
-    wxButton*     m_startBtn       = nullptr;
+    wxButton*     m_startBtn        = nullptr;
     wxTextCtrl*   m_statusCtrl     = nullptr;
+    wxCheckBox*   m_useCorpusCheck = nullptr;
+    wxSizerItem*  m_corpusSizer    = nullptr;
 
     void UpdateBackendFields();
     void SaveFormState() const;

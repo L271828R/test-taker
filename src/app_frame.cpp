@@ -3,15 +3,21 @@
 #include "exam_panel.h"
 #include "review_panel.h"
 #include "chat_panel.h"
+#include "corpus_panel.h"
+#include "corpus.h"
+#include "embeddings.h"
 #include "exam_meta.h"
 #include "config.h"
 #include "logger.h"
 #include "html_template.h"
 #include <wx/config.h>
+#include <filesystem>
 #include <fstream>
 
+namespace fs = std::filesystem;
+
 // Notebook tab indices
-enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT };
+enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS };
 
 wxBEGIN_EVENT_TABLE(AppFrame, wxFrame)
     EVT_MENU(ID_THEME_LIGHT,  AppFrame::OnThemeLight)
@@ -82,11 +88,15 @@ AppFrame::AppFrame()
     // Chat tab
     m_chatPage = new ChatPanel(m_notebook, m_darkMode);
 
+    // Corpus tab
+    m_corpusPage = new CorpusPanel(m_notebook);
+
     m_notebook->AddPage(m_projectPage,    "Projects");
     m_notebook->AddPage(m_newSessionPage, "New Session");
     m_notebook->AddPage(m_examPage,       "Exam");
     m_notebook->AddPage(m_reviewPage,     "Review");
     m_notebook->AddPage(m_chatPage,       "Chat");
+    m_notebook->AddPage(m_corpusPage,     "Corpus");
 
     auto* frameSizer = new wxBoxSizer(wxVERTICAL);
     frameSizer->Add(m_notebook, 1, wxEXPAND);
@@ -116,16 +126,22 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
         llmCfg.ollamaModel = state.ollamaModel;
     }
     m_chatPage->SyncProject(projectDir, llmCfg, m_darkMode);
+    m_corpusPage->SyncProject(projectDir, llmCfg.ollamaUrl);
 
-    // Resume last incomplete session if one exists for this project.
-    if (!state.lastSessionFile.empty() && !m_examPage->HasActiveSession()) {
-        std::string sessionPath = projectDir + "/" + state.lastSessionFile;
-        std::ifstream check(sessionPath);
-        if (check.good()) {
-            m_examPage->ResumeSession(projectDir, sessionPath, llmCfg, m_darkMode);
-            m_notebook->SetSelection(TAB_EXAM);
-            Logger::get().log("Auto-resumed session: " + sessionPath);
+    // Resume last session for this project, or clear stale state from a previous project.
+    if (!m_examPage->HasActiveSession()) {
+        bool resumed = false;
+        if (!state.lastSessionFile.empty()) {
+            std::string sessionPath = projectDir + "/" + state.lastSessionFile;
+            std::ifstream check(sessionPath);
+            if (check.good()) {
+                m_examPage->ResumeSession(projectDir, sessionPath, llmCfg, m_darkMode);
+                m_notebook->SetSelection(TAB_EXAM);
+                Logger::get().log("Auto-resumed session: " + sessionPath);
+                resumed = true;
+            }
         }
+        if (!resumed) m_examPage->Clear();
     }
 
     SetStatusText("Project: " + projectDir);
@@ -138,7 +154,34 @@ void AppFrame::OnSessionStarted(const std::string& projectDir,
                                  const ExamConfig&  cfg,
                                  const LLMConfig&   llmCfg) {
     m_activeProjectDir = projectDir;
-    m_examPage->StartSession(projectDir, sessionFile, cfg, llmCfg, m_darkMode);
+
+    // Augment projectContext with corpus excerpts when the user opted in.
+    ExamConfig augCfg = cfg;
+    std::string dbPath = projectDir + "/corpus.db";
+    if (cfg.useCorpus && fs::exists(dbPath)) {
+        Corpus corpus(dbPath);
+        std::string err;
+        if (corpus.Open(err)) {
+            auto emb = EmbedText(cfg.topic, llmCfg.ollamaUrl);
+            if (emb.ok) {
+                auto hits = corpus.Search(emb.embedding, 5);
+                if (!hits.empty()) {
+                    std::string ctx;
+                    if (!augCfg.projectContext.empty())
+                        ctx = augCfg.projectContext + "\n\n";
+                    ctx += "Relevant excerpts from the study corpus:\n\n";
+                    for (const auto& h : hits)
+                        ctx += h.text + "\n\n---\n\n";
+                    augCfg.projectContext = ctx;
+                    Logger::get().log("Corpus: injected " + std::to_string(hits.size())
+                                      + " chunks into exam context"
+                                      + "  first='" + hits[0].text.substr(0, 80) + "…'");
+                }
+            }
+        }
+    }
+
+    m_examPage->StartSession(projectDir, sessionFile, augCfg, llmCfg, m_darkMode);
     m_notebook->SetSelection(TAB_EXAM);
 }
 

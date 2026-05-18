@@ -40,6 +40,7 @@ public:
     bool HasActiveSession() const { return m_active; }
     void SetDarkMode(bool dark) { m_darkMode = dark; if (m_active) Render(); }
     void AbandonSession();
+    void Clear();   // reset to idle state when switching projects
 
 private:
     SessionCompleteCallback   m_onComplete;

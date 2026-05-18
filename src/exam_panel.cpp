@@ -422,6 +422,27 @@ void ExamPanel::OnAbandon(wxCommandEvent&) {
     AbandonSession();
 }
 
+void ExamPanel::Clear() {
+    m_active          = false;
+    m_busy            = false;
+    m_turns.clear();
+    m_currentQuestion.clear();
+    m_sessionFile.clear();
+    m_projectDir.clear();
+
+    m_sendBtn->Disable();
+    m_skipBtn->Disable();
+    m_flagBtn->Disable();
+    m_abandonBtn->Disable();
+    m_statusLabel->SetLabel("");
+
+    m_chatOpen = false;
+    m_chatPanel->Reset();
+    if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+
+    Render();
+}
+
 void ExamPanel::AbandonSession() {
     m_active          = false;
     m_busy            = false;

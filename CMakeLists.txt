@@ -82,6 +82,23 @@ add_custom_target(gen_hljs_headers ALL
     DEPENDS "${HLJS_JS_H}" "${HLJS_CSS_LIGHT_H}" "${HLJS_CSS_DARK_H}")
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── SQLite3 ──────────────────────────────────────────────────────────────────
+# Prefer Homebrew's sqlite on macOS (system SDK doesn't expose headers cleanly).
+if(APPLE)
+    execute_process(COMMAND brew --prefix sqlite
+        OUTPUT_VARIABLE _BREW_SQLITE
+        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_BREW_SQLITE AND EXISTS "${_BREW_SQLITE}/include/sqlite3.h")
+        set(SQLite3_INCLUDE_DIRS "${_BREW_SQLITE}/include")
+        set(SQLite3_LIBRARIES    "${_BREW_SQLITE}/lib/libsqlite3.dylib")
+        message(STATUS "SQLite3: Homebrew at ${_BREW_SQLITE}")
+    endif()
+endif()
+if(NOT SQLite3_LIBRARIES)
+    find_package(SQLite3 REQUIRED)
+endif()
+# ─────────────────────────────────────────────────────────────────────────────
+
 set(SOURCES
     src/main.cpp
     src/app_frame.cpp
@@ -108,12 +125,15 @@ set(SOURCES
     src/exam_prompt.cpp
     src/turn_chat.cpp
     src/inspector.mm
+    src/corpus.cpp
+    src/embeddings.cpp
+    src/corpus_panel.cpp
 )
 add_executable(test-taker ${SOURCES})
 add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
 
-target_include_directories(test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(test-taker PRIVATE ${wxWidgets_LIBRARIES})
+target_include_directories(test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})
+target_link_libraries(test-taker PRIVATE ${wxWidgets_LIBRARIES} ${SQLite3_LIBRARIES})
 
 # ── Tests (no wxWidgets dependency) ──────────────────────────────────────────
 add_executable(test_test-taker
@@ -136,6 +156,7 @@ add_executable(test_test-taker
     tests/test_exam_meta.cpp
     tests/test_exam_prompt.cpp
     tests/test_turn_chat.cpp
+    tests/test_corpus.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -153,9 +174,12 @@ add_executable(test_test-taker
     src/exam_meta.cpp
     src/exam_prompt.cpp
     src/turn_chat.cpp
+    src/corpus.cpp
+    src/embeddings.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
-target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})
+target_link_libraries(test_test-taker PRIVATE ${SQLite3_LIBRARIES})
 
 enable_testing()
 add_test(NAME dark_mode COMMAND test_test-taker)
