@@ -53,7 +53,7 @@ private:
     DeepDiveCallback          m_onDeepDive;
     SavedConvoCallback        m_onSavedConvo;
 
-    using HistoryGroup = std::pair<std::string, std::vector<QuestionTurn>>;
+    // HistoryGroup is defined in exam_prompt.h
 
     bool              m_active        = false;
     bool              m_busy          = false;
@@ -82,8 +82,8 @@ private:
     void RequestFirstQuestion();
     void RequestNextQuestion();
     void SubmitAnswer(const std::string& answer);
-    void Render();
-    std::string BuildExamHTML() const;
+    void Render(bool scrollToBottom = false);
+    std::string BuildExamHTML(bool scrollToBottom = false) const;
 
     void OnSend(wxCommandEvent&);
     void OnSkip(wxCommandEvent&);

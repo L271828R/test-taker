@@ -485,13 +485,11 @@ int test_exam_prompt() {
         t.score       = Score::Correct;
         t.explanation = "Correct. RAII ties resource lifetime to object scope.";
 
-        std::vector<std::pair<std::string, std::vector<QuestionTurn>>> groups;
-        groups.push_back({"Session — 2026-05-18", {t}});
+        std::vector<HistoryGroup> groups;
+        groups.push_back({"Session — 2026-05-18", "/path/session.md", {t}});
 
         std::string html = RenderHistoryGroups(groups);
-        bool ok = html.find("Session \xe2\x80\x94 2026-05-18") != std::string::npos  // em-dash
-               || html.find("Session") != std::string::npos
-               && html.find("2026-05-18") != std::string::npos;
+        bool ok = html.find("2026-05-18") != std::string::npos;
         bool hasQ    = html.find("What is RAII?") != std::string::npos;
         bool hasClear = html.find("testtaker://clear-history") != std::string::npos;
         if (!ok || !hasQ || !hasClear) {
@@ -500,6 +498,67 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [render-history-groups]\n";
+        }
+    }
+
+    // RenderHistoryGroups: interactive toolbar buttons with correct group/turn URLs
+    {
+        QuestionTurn t0;
+        t0.question    = "What is RAII?";
+        t0.userAnswer  = "Resource lifetime.";
+        t0.score       = Score::Correct;
+        t0.explanation = "RAII ties resource lifetime to object scope.";
+        t0.flagged     = false;
+        t0.saved       = false;
+
+        QuestionTurn t1;
+        t1.question    = "What is a vtable?";
+        t1.userAnswer  = "Virtual dispatch table.";
+        t1.score       = Score::Missed;
+        t1.explanation = "A vtable is a per-class array of function pointers.";
+        t1.flagged     = true;   // already flagged
+        t1.saved       = true;   // already saved
+        t1.note        = "Review before interview";
+
+        std::vector<HistoryGroup> groups;
+        groups.push_back({"Session A", "/path/a.md", {t0, t1}});
+
+        std::string html = RenderHistoryGroups(groups);
+
+        // Discuss button for group 0, turns 0 and 1
+        bool hasDiscuss0 = html.find("testtaker://hdiscuss/0/0") != std::string::npos;
+        bool hasDiscuss1 = html.find("testtaker://hdiscuss/0/1") != std::string::npos;
+        // Flag buttons with correct URLs
+        bool hasFlag0    = html.find("testtaker://hflag/0/0")    != std::string::npos;
+        bool hasFlag1    = html.find("testtaker://hflag/0/1")    != std::string::npos;
+        // Save buttons
+        bool hasSave0    = html.find("testtaker://hsave/0/0")    != std::string::npos;
+        bool hasSave1    = html.find("testtaker://hsave/0/1")    != std::string::npos;
+        // Note buttons
+        bool hasNote0    = html.find("testtaker://hnote/0/0")    != std::string::npos;
+        bool hasNote1    = html.find("testtaker://hnote/0/1")    != std::string::npos;
+        // Flagged state on t1 persists as style
+        bool flaggedClass = html.find("flagged")                 != std::string::npos;
+        // Saved state on t1 persists
+        bool savedClass   = html.find("saved")                   != std::string::npos;
+        // Note text for t1 is shown
+        bool noteText     = html.find("Review before interview") != std::string::npos;
+
+        bool ok = hasDiscuss0 && hasDiscuss1 && hasFlag0 && hasFlag1
+               && hasSave0 && hasSave1 && hasNote0 && hasNote1
+               && flaggedClass && savedClass && noteText;
+        if (!ok) {
+            std::cerr << "FAIL [render-history-groups-interactive]:"
+                      << " discuss0=" << hasDiscuss0 << " discuss1=" << hasDiscuss1
+                      << " flag0=" << hasFlag0 << " flag1=" << hasFlag1
+                      << " save0=" << hasSave0 << " save1=" << hasSave1
+                      << " note0=" << hasNote0 << " note1=" << hasNote1
+                      << " flaggedClass=" << flaggedClass
+                      << " savedClass=" << savedClass
+                      << " noteText=" << noteText << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-history-groups-interactive]\n";
         }
     }
 

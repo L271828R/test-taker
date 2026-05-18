@@ -51,7 +51,13 @@ ExamPanel::ExamPanel(wxWindow* parent,
 
     m_webView = wxWebView::New(m_leftPanel, wxID_ANY, "about:blank");
     m_webView->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent& evt) {
-        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+        if (m_splitter->IsSplit()) {
+            m_splitter->Unsplit(m_chatPanel);
+            m_chatOpen = false;
+            m_webView->RunScript(
+                "var o=document.getElementById('chat-overlay');"
+                "if(o)o.classList.remove('active');");
+        }
         evt.Skip();
     });
     leftSizer->Add(m_webView, 1, wxEXPAND);
@@ -61,7 +67,13 @@ ExamPanel::ExamPanel(wxWindow* parent,
     m_answerCtrl = new wxTextCtrl(m_leftPanel, wxID_ANY, "",
         wxDefaultPosition, wxSize(-1, 80), wxTE_MULTILINE | wxTE_PROCESS_ENTER);
     m_answerCtrl->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent& evt) {
-        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+        if (m_splitter->IsSplit()) {
+            m_splitter->Unsplit(m_chatPanel);
+            m_chatOpen = false;
+            m_webView->RunScript(
+                "var o=document.getElementById('chat-overlay');"
+                "if(o)o.classList.remove('active');");
+        }
         evt.Skip();
     });
     m_sendBtn    = new wxButton(m_leftPanel, ID_EXAM_SEND,    "Submit");
@@ -87,7 +99,9 @@ ExamPanel::ExamPanel(wxWindow* parent,
         [this]() {
             m_chatOpen = false;
             if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
-            Render();
+            m_webView->RunScript(
+                "var o=document.getElementById('chat-overlay');"
+                "if(o)o.classList.remove('active');");
         },
         [this]() { if (m_onSavedConvo) m_onSavedConvo(); });
 
@@ -133,7 +147,7 @@ void ExamPanel::StartSession(const std::string& projectDir,
             auto hdr = LoadSessionHeader(m_sessionFile);
             if (!hdr.topic.empty()) label = hdr.topic;
         }
-        m_historyGroups.push_back({label, m_turns});
+        m_historyGroups.push_back({label, m_sessionFile, m_turns});
     }
 
     m_projectDir      = projectDir;
@@ -190,7 +204,7 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
         auto oldTurns = LoadSession(path);
         if (oldTurns.empty()) continue;
         std::string label = rec.topic.empty() ? rec.startedAt.substr(0, 10) : rec.topic;
-        m_historyGroups.push_back({label, oldTurns});
+        m_historyGroups.push_back({label, path, oldTurns});
     }
 
     m_cfg.topic          = hdr.topic;
@@ -303,7 +317,7 @@ void ExamPanel::RequestFirstQuestion() {
             m_statusLabel->SetLabel("Question 1 of " + std::to_string(m_cfg.totalQuestions));
             m_sendBtn->Enable();
             m_skipBtn->Enable();
-            Render();
+            Render(true);  // scroll to bottom to show the new question
         });
     }).detach();
 }
@@ -361,7 +375,7 @@ void ExamPanel::RequestNextQuestion() {
                                     + " of " + std::to_string(m_cfg.totalQuestions));
             m_sendBtn->Enable();
             m_skipBtn->Enable();
-            Render();
+            Render(true);  // scroll to bottom to show the new question
         });
     }).detach();
 }
@@ -448,19 +462,19 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_abandonBtn->Disable();
                 if (m_onComplete) m_onComplete(m_sessionFile);
             }
-            Render();
+            Render(true);  // scroll to bottom to show the scored answer + next question
         });
     }).detach();
 }
 
 // ---------------------------------------------------------------------------
-void ExamPanel::Render() {
-    std::string html = BuildExamHTML();
+void ExamPanel::Render(bool scrollToBottom) {
+    std::string html = BuildExamHTML(scrollToBottom);
     m_webView->SetPage(wxString::FromUTF8(html), "");
 }
 
 // ---------------------------------------------------------------------------
-std::string ExamPanel::BuildExamHTML() const {
+std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
     std::ostringstream body;
 
     if (!m_historyGroups.empty())
@@ -507,15 +521,18 @@ std::string ExamPanel::BuildExamHTML() const {
 </style>
 )";
 
-    std::string overlay;
-    if (m_chatOpen)
-        overlay = "<div id='chat-overlay' class='active' "
-                  "onclick=\"window.location='testtaker://closechat'\"></div>";
+    // Overlay is always in the DOM so RunScript can toggle it without a full reload.
+    std::string activeClass = m_chatOpen ? " class='active'" : "";
+    std::string overlay = "<div id='chat-overlay'" + activeClass
+                        + " onclick=\"window.location='testtaker://closechat'\"></div>";
 
     std::string deepdiveBtn;
     if (m_active)
         deepdiveBtn = "<a id='deepdive-btn' href='testtaker://deepdive' "
                       "title='Set focus areas for remaining questions'>&#x1F3AF;</a>";
+
+    if (scrollToBottom)
+        body << "<script>window.scrollTo(0,document.body.scrollHeight);</script>";
 
     return BuildHTML(extraCSS + overlay + deepdiveBtn + body.str(), "Exam", m_darkMode);
 }
@@ -623,7 +640,10 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
             m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
-        Render();
+        // Toggle overlay via script — avoids a full SetPage() that would reset scroll.
+        m_webView->RunScript(
+            "var o=document.getElementById('chat-overlay');"
+            "if(o)o.classList.add('active');");
         return;
     }
 
@@ -631,7 +651,9 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         evt.Veto();
         m_chatOpen = false;
         if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
-        Render();
+        m_webView->RunScript(
+            "var o=document.getElementById('chat-overlay');"
+            "if(o)o.classList.remove('active');");
         return;
     }
 
@@ -656,6 +678,83 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         m_turns[idx].note = note;
         SetTurnNote(m_sessionFile, idx, note);
         Logger::get().log("Turn " + std::to_string(idx) + " note set");
+        Render();
+        return;
+    }
+
+    // ── History-turn actions: testtaker://h{action}/groupIdx/turnIdx ──────
+    auto parseHistIdx = [](const wxString& rest, long& g, long& i) -> bool {
+        int slash = rest.Find('/');
+        if (slash < 0) return false;
+        return rest.Left(slash).ToLong(&g) && rest.Mid(slash + 1).ToLong(&i);
+    };
+
+    if (url.StartsWith("testtaker://hflag/")) {
+        evt.Veto();
+        long g = -1, i = -1;
+        if (!parseHistIdx(url.Mid(18), g, i)) return;
+        if (g < 0 || g >= (long)m_historyGroups.size()) return;
+        if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
+        auto& turn = m_historyGroups[g].turns[i];
+        turn.flagged = !turn.flagged;
+        SetTurnFlagged(m_historyGroups[g].sessionFile, (int)i, turn.flagged);
+        Render();
+        return;
+    }
+
+    if (url.StartsWith("testtaker://hnote/")) {
+        evt.Veto();
+        long g = -1, i = -1;
+        if (!parseHistIdx(url.Mid(18), g, i)) return;
+        if (g < 0 || g >= (long)m_historyGroups.size()) return;
+        if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
+        auto& turn = m_historyGroups[g].turns[i];
+        wxTextEntryDialog dlg(this, "Your note for this question:", "Add Note",
+                              wxString::FromUTF8(turn.note),
+                              wxOK | wxCANCEL | wxTE_MULTILINE);
+        if (dlg.ShowModal() != wxID_OK) return;
+        turn.note = dlg.GetValue().ToStdString();
+        SetTurnNote(m_historyGroups[g].sessionFile, (int)i, turn.note);
+        Render();
+        return;
+    }
+
+    if (url.StartsWith("testtaker://hdiscuss/")) {
+        evt.Veto();
+        long g = -1, i = -1;
+        if (!parseHistIdx(url.Mid(21), g, i)) return;
+        if (g < 0 || g >= (long)m_historyGroups.size()) return;
+        if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
+        const auto& grp = m_historyGroups[g];
+        m_chatPanel->OpenTurn(grp.turns[i], (int)i, grp.sessionFile, m_llmCfg);
+        if (!m_splitter->IsSplit()) {
+            int w = m_splitter->GetClientSize().GetWidth();
+            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+        }
+        m_chatOpen = true;
+        m_webView->RunScript(
+            "var o=document.getElementById('chat-overlay');"
+            "if(o)o.classList.add('active');");
+        return;
+    }
+
+    if (url.StartsWith("testtaker://hsave/")) {
+        evt.Veto();
+        long g = -1, i = -1;
+        if (!parseHistIdx(url.Mid(18), g, i)) return;
+        if (g < 0 || g >= (long)m_historyGroups.size()) return;
+        if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
+        auto& turn = m_historyGroups[g].turns[i];
+        if (turn.saved) return;
+
+        std::time_t now = std::time(nullptr);
+        char dateBuf[16];
+        std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", std::localtime(&now));
+
+        AppendSavedConvo(m_projectDir, turn.question, turn.explanation, dateBuf);
+        turn.saved = true;
+        SetTurnSaved(m_historyGroups[g].sessionFile, (int)i, true);
+        if (m_onSavedConvo) m_onSavedConvo();
         Render();
         return;
     }

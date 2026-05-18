@@ -56,7 +56,16 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput);
 std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
                              const std::vector<int>&          chatCounts);
 
-// Render past-session groups as read-only history above the active session.
-// Each group is (sessionLabel, turns). Includes a clear-history link.
-std::string RenderHistoryGroups(
-    const std::vector<std::pair<std::string, std::vector<QuestionTurn>>>& groups);
+// A past session displayed in the history section of the Exam tab.
+// sessionFile is needed so interactive toolbar actions (flag, note, discuss, save)
+// can persist changes to the correct file.
+struct HistoryGroup {
+    std::string              label;
+    std::string              sessionFile;
+    std::vector<QuestionTurn> turns;
+};
+
+// Render past-session groups as interactive history above the active session.
+// Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
+// Includes a clear-history link.
+std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups);

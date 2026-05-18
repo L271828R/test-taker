@@ -296,8 +296,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 }
 
 // ---------------------------------------------------------------------------
-std::string RenderHistoryGroups(
-    const std::vector<std::pair<std::string, std::vector<QuestionTurn>>>& groups) {
+std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
     std::ostringstream out;
 
     out << R"(<style>
@@ -314,7 +313,24 @@ std::string RenderHistoryGroups(
                     margin-bottom:0.4em; padding-bottom:0.2em;
                     border-bottom:1px solid var(--border); }
 .hist-turn { border-bottom:1px solid var(--border); margin-bottom:0.8em;
-             border-radius:4px; padding:0.6em 0.8em; opacity:0.75; }
+             border-radius:4px; padding:0.6em 0.8em; opacity:0.85;
+             transition:background 0.15s; }
+.hist-turn:hover { opacity:1; background:var(--surface); }
+.hist-turn-toolbar { display:flex; gap:0.4em; margin-bottom:0.4em; }
+.hist-turn:hover .flag-btn  { opacity:1; }
+.hist-turn:hover .note-btn  { opacity:1; }
+.hist-turn:hover .discuss-btn { opacity:1; }
+.hist-turn:hover .save-btn  { opacity:1; }
+.flag-btn, .note-btn, .discuss-btn, .save-btn {
+    opacity:0; transition:opacity 0.15s;
+    background:none; border:1px solid var(--border);
+    border-radius:4px; padding:0.15em 0.5em;
+    font-size:0.82em; cursor:pointer; color:var(--text-muted);
+    text-decoration:none; white-space:nowrap; }
+.flag-btn.flagged   { color:#e3a000; border-color:#e3a000; opacity:1; }
+.note-btn.has-note  { color:var(--link); border-color:var(--link); opacity:1; }
+.save-btn.saved     { color:#1a7f37; border-color:#1a7f37; opacity:1; }
+.discuss-btn.has-chat { color:var(--link); border-color:var(--link); opacity:1; }
 .hist-question { font-weight:600; margin-bottom:.3em; font-size:0.95em; }
 .hist-answer   { color:var(--text-muted); font-size:.88em; margin-bottom:.25em; }
 .hist-verdict  { display:inline-block; padding:.1em .5em; border-radius:4px;
@@ -324,6 +340,9 @@ std::string RenderHistoryGroups(
 .hist-verdict.missed   { background:#cf222e; color:#fff; }
 .hist-verdict.skipped  { background:#57606a; color:#fff; }
 .hist-expl { font-size:.88em; }
+.hist-note { margin-top:0.4em; padding:0.4em 0.6em;
+             background:var(--surface); border-left:3px solid var(--link);
+             font-size:0.9em; color:var(--text-muted); white-space:pre-wrap; }
 .hist-separator { border:none; border-top:2px solid var(--border);
                   margin:2em 0 1.4em; }
 </style>
@@ -334,22 +353,44 @@ std::string RenderHistoryGroups(
         << "<a class='clear-hist-btn' href='testtaker://clear-history'>&#x2715; Clear history</a>"
         << "</div>\n";
 
-    for (const auto& [label, turns] : groups) {
+    for (int g = 0; g < (int)groups.size(); ++g) {
+        const auto& grp = groups[g];
         out << "<div class='hist-group'>"
-            << "<div class='hist-group-label'>" << EscapeHTML(label) << "</div>";
-        for (const auto& t : turns) {
+            << "<div class='hist-group-label'>" << EscapeHTML(grp.label) << "</div>";
+        for (int i = 0; i < (int)grp.turns.size(); ++i) {
+            const auto& t = grp.turns[i];
             std::string scoreClass =
                 t.score == Score::Correct ? "correct" :
                 t.score == Score::Partial ? "partial" :
                 t.score == Score::Missed  ? "missed"  : "skipped";
+            std::string flagClass  = t.flagged     ? " flagged"  : "";
+            std::string flagLabel  = t.flagged     ? "&#x2691; flagged" : "&#x2691; flag";
+            std::string noteClass  = t.note.empty() ? ""          : " has-note";
+            std::string saveClass  = t.saved        ? " saved"    : "";
+            std::string saveLabel  = t.saved        ? "&#x1F516; saved" : "&#x1F516; save";
+            std::string gStr       = std::to_string(g);
+            std::string iStr       = std::to_string(i);
+
             out << "<div class='hist-turn'>"
+                << "<div class='hist-turn-toolbar'>"
+                << "<a class='discuss-btn' href='testtaker://hdiscuss/" << gStr << "/" << iStr
+                << "'>&#x1F4AC; discuss</a>"
+                << "<a class='note-btn" << noteClass << "' href='testtaker://hnote/" << gStr << "/" << iStr
+                << "'>&#x270E; note</a>"
+                << "<a class='save-btn" << saveClass << "' href='testtaker://hsave/" << gStr << "/" << iStr
+                << "'>" << saveLabel << "</a>"
+                << "<a class='flag-btn" << flagClass << "' href='testtaker://hflag/" << gStr << "/" << iStr
+                << "'>" << flagLabel << "</a>"
+                << "</div>"
                 << "<div class='hist-question'>" << RenderMarkdown(t.question) << "</div>"
                 << "<div class='hist-answer'>"
                 << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
                 << "</div>"
                 << "<div class='hist-verdict " << scoreClass << "'>" << ScoreLabel(t.score) << "</div>"
-                << "<div class='hist-expl'>" << RenderMarkdown(t.explanation) << "</div>"
-                << "</div>\n";
+                << "<div class='hist-expl'>" << RenderMarkdown(t.explanation) << "</div>";
+            if (!t.note.empty())
+                out << "<div class='hist-note'>" << EscapeHTML(t.note) << "</div>";
+            out << "</div>\n";
         }
         out << "</div>\n";
     }
