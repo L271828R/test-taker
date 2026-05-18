@@ -40,9 +40,35 @@ std::string ExtractJSONString(const std::string& json, const std::string& key) {
     for (std::size_t i = pos; i < json.size(); ++i) {
         if (esc) {
             switch (json[i]) {
-                case 'n': val += '\n'; break;
-                case 't': val += '\t'; break;
-                case 'r': val += '\r'; break;
+                case 'n':  val += '\n'; break;
+                case 't':  val += '\t'; break;
+                case 'r':  val += '\r'; break;
+                case '"':  val += '"';  break;
+                case '\\': val += '\\'; break;
+                case 'u': {
+                    if (i + 4 < json.size()) {
+                        unsigned int cp = 0;
+                        for (int k = 1; k <= 4; ++k) {
+                            unsigned char h = static_cast<unsigned char>(json[i + k]);
+                            cp <<= 4;
+                            if (h >= '0' && h <= '9')      cp += h - '0';
+                            else if (h >= 'a' && h <= 'f') cp += h - 'a' + 10;
+                            else if (h >= 'A' && h <= 'F') cp += h - 'A' + 10;
+                        }
+                        i += 4;
+                        if (cp < 0x80) {
+                            val += static_cast<char>(cp);
+                        } else if (cp < 0x800) {
+                            val += static_cast<char>(0xC0 | (cp >> 6));
+                            val += static_cast<char>(0x80 | (cp & 0x3F));
+                        } else {
+                            val += static_cast<char>(0xE0 | (cp >> 12));
+                            val += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                            val += static_cast<char>(0x80 | (cp & 0x3F));
+                        }
+                    }
+                    break;
+                }
                 default:  val += json[i]; break;
             }
             esc = false;

@@ -101,6 +101,20 @@ int test_llm_response() {
         }
     }
 
+    // ExtractJSONString decodes \uXXXX escapes (Anthropic API encodes < > & as < etc.)
+    {
+        // Simulates Anthropic API JSON: < = <, > = >
+        std::string json = "{\"text\":\"dynamic_cast\\u003cCircle*\\u003e(shape)\"}";
+        std::string val  = ExtractJSONString(json, "text");
+        bool ok = val == "dynamic_cast<Circle*>(shape)";
+        if (!ok) {
+            std::cerr << "FAIL [extract-json-unicode-escape]: got '" << val << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [extract-json-unicode-escape]\n";
+        }
+    }
+
     {
         bool ok = BackendFromLabel("Gemini CLI") == LLMBackend::GeminiCLI
                && BackendLabel(LLMBackend::GeminiCLI) == "Gemini CLI";
