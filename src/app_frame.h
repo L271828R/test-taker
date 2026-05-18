@@ -51,6 +51,7 @@ private:
     void OnDrillRequested(const std::string& projectDir,
                           const std::string& sessionFile,
                           int                questionIndex);
+    void OnDeepDiveRequested();
 
     // ── Menu handlers ─────────────────────────────────────────────────────
     void OnThemeLight(wxCommandEvent&);

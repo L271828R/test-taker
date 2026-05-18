@@ -14,8 +14,11 @@
 class ExamPanel : public wxPanel {
 public:
     using SessionCompleteCallback = std::function<void(const std::string& sessionFile)>;
+    using DeepDiveCallback        = std::function<void()>;
 
-    ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete);
+    ExamPanel(wxWindow* parent,
+              SessionCompleteCallback onSessionComplete,
+              DeepDiveCallback        onDeepDive = {});
 
     void StartSession(const std::string& projectDir,
                       const std::string& sessionFile,
@@ -38,12 +41,13 @@ public:
                     bool               darkMode);
 
     bool HasActiveSession() const { return m_active; }
-    void SetDarkMode(bool dark) { m_darkMode = dark; if (m_active) Render(); }
+    void SetDarkMode(bool dark);
     void AbandonSession();
     void Clear();   // reset to idle state when switching projects
 
 private:
     SessionCompleteCallback   m_onComplete;
+    DeepDiveCallback          m_onDeepDive;
 
     bool              m_active        = false;
     bool              m_busy          = false;

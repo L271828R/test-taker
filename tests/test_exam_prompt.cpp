@@ -32,6 +32,112 @@ int test_exam_prompt() {
         }
     }
 
+    // PickFocusArea: empty list returns ""
+    {
+        std::vector<FocusArea> empty;
+        bool ok = PickFocusArea(empty).empty();
+        if (!ok) {
+            std::cerr << "FAIL [pick-focus-area-empty]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pick-focus-area-empty]\n";
+        }
+    }
+
+    // PickFocusArea: single item always returns that item
+    {
+        std::vector<FocusArea> single = {{"Presigned URLs", 3}};
+        bool ok = PickFocusArea(single) == "Presigned URLs";
+        if (!ok) {
+            std::cerr << "FAIL [pick-focus-area-single]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pick-focus-area-single]\n";
+        }
+    }
+
+    // PickFocusArea: multiple items — result is always one of the items
+    {
+        std::vector<FocusArea> areas = {
+            {"Presigned URLs", 5},
+            {"Lifecycle rules", 2},
+            {"Versioning", 1}
+        };
+        bool ok = true;
+        for (int i = 0; i < 30; ++i) {
+            std::string pick = PickFocusArea(areas);
+            bool found = (pick == "Presigned URLs" ||
+                          pick == "Lifecycle rules" ||
+                          pick == "Versioning");
+            if (!found) { ok = false; break; }
+        }
+        if (!ok) {
+            std::cerr << "FAIL [pick-focus-area-multiple]: unexpected result\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pick-focus-area-multiple]\n";
+        }
+    }
+
+    // PickFocusArea: 5-star item is more likely than 1-star (statistical)
+    {
+        std::vector<FocusArea> areas = {{"High", 5}, {"Low", 1}};
+        int highCount = 0;
+        for (int i = 0; i < 100; ++i)
+            if (PickFocusArea(areas) == "High") ++highCount;
+        // With 5:1 odds, high should win at least 50% of 100 trials
+        bool ok = highCount >= 50;
+        if (!ok) {
+            std::cerr << "FAIL [pick-focus-area-weighted]: highCount=" << highCount << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pick-focus-area-weighted]\n";
+        }
+    }
+
+    // BuildFirstQuestionPrompt injects focusAreas when set
+    {
+        ExamConfig cfgFocus = cfg;
+        cfgFocus.focusAreas = "Presigned URLs and lifecycle rules";
+        std::string p = BuildFirstQuestionPrompt(cfgFocus);
+        bool ok = p.find("Presigned URLs and lifecycle rules") != std::string::npos;
+        if (!ok) {
+            std::cerr << "FAIL [first-question-focus-areas]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [first-question-focus-areas]\n";
+        }
+    }
+
+    // BuildFirstQuestionPrompt omits focus-areas section when empty
+    {
+        ExamConfig cfgNoFocus = cfg;
+        cfgNoFocus.focusAreas = "";
+        std::string p = BuildFirstQuestionPrompt(cfgNoFocus);
+        // "Focus areas:" header must not appear when field is empty
+        bool ok = p.find("Focus areas:") == std::string::npos;
+        if (!ok) {
+            std::cerr << "FAIL [first-question-no-focus-areas]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [first-question-no-focus-areas]\n";
+        }
+    }
+
+    // BuildScoringAndNextPrompt injects focusAreas
+    {
+        ExamConfig cfgFocus = cfg;
+        cfgFocus.focusAreas = "Presigned URLs and lifecycle rules";
+        std::string p = BuildScoringAndNextPrompt(cfgFocus, {}, "What is S3?", "Object storage.", 2);
+        bool ok = p.find("Presigned URLs and lifecycle rules") != std::string::npos;
+        if (!ok) {
+            std::cerr << "FAIL [scoring-focus-areas]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [scoring-focus-areas]\n";
+        }
+    }
+
     // BuildFirstQuestionPrompt without project context omits context section
     {
         ExamConfig cfgNoCtx = cfg;

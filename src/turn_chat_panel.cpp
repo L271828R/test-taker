@@ -86,6 +86,22 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
 }
 
 // ---------------------------------------------------------------------------
+void TurnChatPanel::SetDarkMode(bool dark) {
+    m_darkMode = dark;
+    if (dark) {
+        m_inputCtrl->SetBackgroundColour(wxColour(28, 33, 40));
+        m_inputCtrl->SetForegroundColour(wxColour(230, 237, 243));
+        SetBackgroundColour(wxColour(13, 17, 23));
+    } else {
+        m_inputCtrl->SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
+        m_inputCtrl->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+        SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
+    }
+    m_inputCtrl->Refresh();
+    Refresh();
+    Render();
+}
+
 void TurnChatPanel::Reset() {
     m_turnIndex   = -1;
     m_sessionFile.clear();

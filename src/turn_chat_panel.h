@@ -24,6 +24,8 @@ public:
     // Clear state (called when a new session starts).
     void Reset();
 
+    void SetDarkMode(bool dark);
+
 private:
     bool                  m_darkMode;
     std::function<void()> m_onClose;

@@ -3,13 +3,24 @@
 #include <vector>
 #include "session.h"
 
+struct FocusArea {
+    std::string text;
+    int         stars = 3; // 1 (low priority) … 5 (high priority)
+};
+
+// Weighted random selection — higher-star areas are proportionally more likely.
+// Returns "" when the list is empty.
+std::string PickFocusArea(const std::vector<FocusArea>& areas);
+
 struct ExamConfig {
-    std::string topic;           // short label shown in Review (one line)
-    std::string instructions;    // free-form focus/detail injected into the prompt
-    std::string difficulty;      // "easy" | "medium" | "hard" | "mixed"
-    std::string projectContext;  // contents of context.md, injected verbatim
+    std::string topic;                       // short label shown in Review (one line)
+    std::string instructions;                // free-form focus/detail injected into the prompt
+    std::string focusAreas;                  // per-question focus (picked randomly from list below)
+    std::vector<FocusArea> focusAreaList;    // user-defined list with star weights
+    std::string difficulty;                  // "easy" | "medium" | "hard" | "mixed"
+    std::string projectContext;              // contents of context.md, injected verbatim
     int         totalQuestions = 10;
-    bool        useCorpus      = false; // when true, corpus chunks are retrieved and injected
+    bool        useCorpus      = false;      // when true, corpus chunks are retrieved and injected
 };
 
 // Build the first prompt: asks LLM to generate question #1.

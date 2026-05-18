@@ -1,4 +1,5 @@
 #include "new_session_panel.h"
+#include "focus_list_panel.h"
 #include "config.h"
 #include "exam_meta.h"
 #include "meta.h"
@@ -118,6 +119,16 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
             "e.g. \"Focus on move semantics, RAII, and smart pointers. "
             "Avoid basic syntax questions.\"");
         inner->Add(m_instrCtrl, 0, wxEXPAND | wxBOTTOM, 10);
+    }
+
+    // ── Focus areas ──────────────────────────────────────────────────────
+    {
+        auto* label = new wxStaticText(this, wxID_ANY,
+            "Focus areas — add sub-topics and rate priority (★ = low, ★★★★★ = high):");
+        inner->Add(label, 0, wxBOTTOM, 4);
+
+        m_focusListPanel = new FocusListPanel(this, 140);
+        inner->Add(m_focusListPanel, 0, wxEXPAND | wxBOTTOM, 10);
     }
 
     // ── Difficulty + Question count ───────────────────────────────────────
@@ -362,6 +373,7 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     ExamConfig cfg;
     cfg.topic          = topic.ToStdString();
     cfg.instructions   = m_instrCtrl->GetValue().Trim().ToStdString();
+    cfg.focusAreaList  = m_focusListPanel->GetAreas();
     cfg.difficulty     = m_difficultyCtrl->GetString(
         m_difficultyCtrl->GetSelection()).ToStdString();
     cfg.totalQuestions = m_countCtrl->GetValue();
@@ -422,6 +434,7 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
 
     Logger::get().log("Starting session: " + sessionFile
                       + "  topic=" + cfg.topic
+                      + "  focusAreas=" + std::to_string(cfg.focusAreaList.size())
                       + "  difficulty=" + cfg.difficulty
                       + "  questions=" + std::to_string(cfg.totalQuestions)
                       + "  backend=" + backendLabel);
@@ -429,4 +442,20 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     SetStatus("Starting: " + wxString::FromUTF8(cfg.topic));
 
     if (m_onStart) m_onStart(m_activeProjectDir, sessionFile, cfg, llmCfg);
+}
+
+// ---------------------------------------------------------------------------
+void NewSessionPanel::PreFill(const std::string&           topic,
+                               const std::vector<FocusArea>& focusAreas,
+                               const std::string&           difficulty,
+                               int                          questionCount) {
+    if (!topic.empty())
+        m_topicCtrl->SetValue(wxString::FromUTF8(topic));
+    m_focusListPanel->SetAreas(focusAreas);
+
+    if (!difficulty.empty()) {
+        int idx = m_difficultyCtrl->FindString(wxString::FromUTF8(difficulty));
+        if (idx != wxNOT_FOUND) m_difficultyCtrl->SetSelection(idx);
+    }
+    if (questionCount > 0) m_countCtrl->SetValue(questionCount);
 }

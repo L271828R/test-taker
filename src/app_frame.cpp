@@ -6,10 +6,12 @@
 #include "corpus_panel.h"
 #include "corpus.h"
 #include "exam_meta.h"
+#include "focus_list_panel.h"
 #include "config.h"
 #include "logger.h"
 #include "html_template.h"
 #include <wx/config.h>
+#include <wx/spinctrl.h>
 #include <fstream>
 
 // Notebook tab indices
@@ -75,7 +77,8 @@ AppFrame::AppFrame()
 
     // Exam tab
     m_examPage = new ExamPanel(m_notebook,
-        [this](const std::string& sessionFile){ OnSessionComplete(sessionFile); });
+        [this](const std::string& sessionFile){ OnSessionComplete(sessionFile); },
+        [this](){ OnDeepDiveRequested(); });
 
     // Review tab
     m_reviewPage = new ReviewPanel(m_notebook,
@@ -153,19 +156,7 @@ void AppFrame::OnSessionStarted(const std::string& projectDir,
                                  const LLMConfig&   llmCfg) {
     m_activeProjectDir = projectDir;
 
-    // Augment projectContext with corpus excerpts when the user opted in.
-    ExamConfig augCfg = cfg;
-    if (cfg.useCorpus) {
-        std::string corpusCtx = CorpusContextFor(projectDir, cfg.topic,
-                                                  llmCfg.ollamaUrl, "Exam");
-        if (!corpusCtx.empty()) {
-            augCfg.projectContext = corpusCtx
-                + (augCfg.projectContext.empty() ? "" : "\n\n" + augCfg.projectContext);
-            Logger::get().log("Corpus: injected chunks into exam context for topic='" + cfg.topic + "'");
-        }
-    }
-
-    m_examPage->StartSession(projectDir, sessionFile, augCfg, llmCfg, m_darkMode);
+    m_examPage->StartSession(projectDir, sessionFile, cfg, llmCfg, m_darkMode);
     m_notebook->SetSelection(TAB_EXAM);
 }
 
@@ -266,6 +257,57 @@ void AppFrame::OnFontDecrease(wxCommandEvent&) {
 void AppFrame::OnFontReset(wxCommandEvent&) {
     m_fontSizePercent = 100;
     wxConfig("TestTaker").Write("fontSizePercent", 100);
+}
+
+// ---------------------------------------------------------------------------
+void AppFrame::OnDeepDiveRequested() {
+    // ── Build dialog: focus-area list + difficulty + question count ───────
+    wxDialog dlg(this, wxID_ANY, "Focus Areas for Next Session",
+                 wxDefaultPosition, wxSize(520, 400));
+
+    auto* outer = new wxBoxSizer(wxVERTICAL);
+    auto* inner = new wxBoxSizer(wxVERTICAL);
+
+    inner->Add(new wxStaticText(&dlg, wxID_ANY,
+        "Add sub-topics you want drilled. Rate priority with stars.\n"
+        "Each question randomly picks one area — higher stars = more likely."),
+        0, wxBOTTOM, 8);
+
+    auto* focusPanel = new FocusListPanel(&dlg, 180);
+    inner->Add(focusPanel, 0, wxEXPAND | wxBOTTOM, 12);
+
+    auto* row = new wxBoxSizer(wxHORIZONTAL);
+    row->Add(new wxStaticText(&dlg, wxID_ANY, "Difficulty:"),
+             0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+    wxArrayString diffs;
+    for (auto* d : {"mixed", "easy", "medium", "hard"}) diffs.Add(d);
+    auto* diffCtrl = new wxChoice(&dlg, wxID_ANY, wxDefaultPosition,
+                                  wxDefaultSize, diffs);
+    diffCtrl->SetSelection(0);
+    row->Add(diffCtrl, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 20);
+
+    row->Add(new wxStaticText(&dlg, wxID_ANY, "Questions:"),
+             0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
+    auto* countCtrl = new wxSpinCtrl(&dlg, wxID_ANY, "10",
+        wxDefaultPosition, wxSize(70, -1), wxSP_ARROW_KEYS, 1, 50, 10);
+    row->Add(countCtrl, 0, wxALIGN_CENTER_VERTICAL);
+    inner->Add(row, 0, wxBOTTOM, 12);
+
+    auto* btns = dlg.CreateButtonSizer(wxOK | wxCANCEL);
+    inner->Add(btns, 0, wxEXPAND);
+
+    outer->Add(inner, 1, wxEXPAND | wxALL, 14);
+    dlg.SetSizer(outer);
+    dlg.Layout();
+
+    if (dlg.ShowModal() != wxID_OK) return;
+
+    auto focusAreas = focusPanel->GetAreas();
+    std::string difficulty = diffCtrl->GetString(diffCtrl->GetSelection()).ToStdString();
+    int count = countCtrl->GetValue();
+
+    m_newSessionPage->PreFill("", focusAreas, difficulty, count);
+    m_notebook->SetSelection(TAB_NEW_SESSION);
 }
 
 void AppFrame::OnExit(wxCommandEvent&) { Close(); }

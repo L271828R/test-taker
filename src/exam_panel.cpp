@@ -1,6 +1,7 @@
 #include "exam_panel.h"
 #include "html_template.h"
 #include "exam_prompt.h"
+#include "corpus.h"
 #include "markdown.h"
 #include "logger.h"
 #include <sstream>
@@ -22,8 +23,12 @@ wxBEGIN_EVENT_TABLE(ExamPanel, wxPanel)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, ExamPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
-ExamPanel::ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete)
-    : wxPanel(parent), m_onComplete(std::move(onSessionComplete))
+ExamPanel::ExamPanel(wxWindow* parent,
+                     SessionCompleteCallback onSessionComplete,
+                     DeepDiveCallback        onDeepDive)
+    : wxPanel(parent),
+      m_onComplete(std::move(onSessionComplete)),
+      m_onDeepDive(std::move(onDeepDive))
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
@@ -91,6 +96,21 @@ ExamPanel::ExamPanel(wxWindow* parent, SessionCompleteCallback onSessionComplete
 }
 
 // ---------------------------------------------------------------------------
+void ExamPanel::SetDarkMode(bool dark) {
+    m_darkMode = dark;
+    m_chatPanel->SetDarkMode(dark);
+    if (dark) {
+        m_answerCtrl->SetBackgroundColour(wxColour(28, 33, 40));
+        m_answerCtrl->SetForegroundColour(wxColour(230, 237, 243));
+    } else {
+        m_answerCtrl->SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
+        m_answerCtrl->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+    }
+    m_answerCtrl->Refresh();
+    if (m_active) Render();
+}
+
+// ---------------------------------------------------------------------------
 void ExamPanel::StartSession(const std::string& projectDir,
                              const std::string& sessionFile,
                              const ExamConfig&  cfg,
@@ -100,7 +120,7 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_sessionFile     = sessionFile;
     m_cfg             = cfg;
     m_llmCfg          = llmCfg;
-    m_darkMode        = darkMode;
+    SetDarkMode(darkMode);
     m_active          = true;
     m_busy            = false;
     m_questionIndex   = 0;
@@ -131,7 +151,7 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     m_projectDir      = projectDir;
     m_sessionFile     = sessionFile;
     m_llmCfg          = llmCfg;
-    m_darkMode        = darkMode;
+    SetDarkMode(darkMode);
     m_turns           = turns;
     m_questionIndex   = (int)turns.size();
     m_currentQuestion.clear();
@@ -183,7 +203,7 @@ void ExamPanel::StartDrill(const std::string& projectDir,
     m_sessionFile   = sessionFile;
     m_cfg           = cfg;
     m_llmCfg        = llmCfg;
-    m_darkMode      = darkMode;
+    SetDarkMode(darkMode);
     m_active        = true;
     m_busy          = false;
     m_turns         = {};
@@ -210,11 +230,24 @@ void ExamPanel::RequestFirstQuestion() {
     m_sendBtn->Disable();
     m_skipBtn->Disable();
 
-    std::string prompt = BuildFirstQuestionPrompt(m_cfg);
-    LLMConfig   cfg    = m_llmCfg;
+    ExamConfig  examCfg    = m_cfg;
+    LLMConfig   llmCfg     = m_llmCfg;
+    std::string projectDir = m_projectDir;
 
-    std::thread([this, prompt, cfg]() {
-        auto result = InvokeLLM(prompt, cfg);
+    std::thread([this, examCfg, llmCfg, projectDir]() {
+        ExamConfig localCfg = examCfg;
+        // Per-question random weighted pick from the focus-area list
+        if (!localCfg.focusAreaList.empty())
+            localCfg.focusAreas = PickFocusArea(localCfg.focusAreaList);
+        if (localCfg.useCorpus) {
+            std::string ragQuery = localCfg.focusAreas.empty()
+                                   ? localCfg.topic : localCfg.focusAreas;
+            std::string ctx = CorpusContextFor(projectDir, ragQuery,
+                                               llmCfg.ollamaUrl, "Exam");
+            if (!ctx.empty()) localCfg.projectContext = ctx;
+        }
+        std::string prompt = BuildFirstQuestionPrompt(localCfg);
+        auto result = InvokeLLM(prompt, llmCfg);
         wxTheApp->CallAfter([this, result]() {
             m_busy = false;
             if (!result.ok) {
@@ -245,16 +278,28 @@ void ExamPanel::RequestNextQuestion() {
     m_skipBtn->Disable();
     m_statusLabel->SetLabel("Asking next question…");
 
+    ExamConfig  examCfg    = m_cfg;
+    LLMConfig   llmCfg     = m_llmCfg;
+    std::string projectDir = m_projectDir;
+    std::vector<QuestionTurn> turns = m_turns;
     int remaining = m_cfg.totalQuestions - (int)m_turns.size() - 1;
-    // Build a scoring prompt with a placeholder "resumed" answer so the LLM
-    // just emits NEXT_QUESTION without re-scoring anything.
-    std::string prompt = BuildScoringAndNextPrompt(
-        m_cfg, m_turns, "(session resumed — generate next question only)",
-        "(resumed)", remaining);
-    LLMConfig cfg = m_llmCfg;
+    std::string resumeQuery = m_turns.empty() ? m_cfg.topic : m_turns.back().question;
 
-    std::thread([this, prompt, cfg]() {
-        auto result = InvokeLLM(prompt, cfg);
+    std::thread([this, examCfg, llmCfg, projectDir, turns, remaining, resumeQuery]() {
+        ExamConfig localCfg = examCfg;
+        if (!localCfg.focusAreaList.empty())
+            localCfg.focusAreas = PickFocusArea(localCfg.focusAreaList);
+        if (localCfg.useCorpus) {
+            std::string ragQuery = localCfg.focusAreas.empty()
+                                   ? resumeQuery : localCfg.focusAreas;
+            std::string ctx = CorpusContextFor(projectDir, ragQuery,
+                                               llmCfg.ollamaUrl, "Exam");
+            if (!ctx.empty()) localCfg.projectContext = ctx;
+        }
+        std::string prompt = BuildScoringAndNextPrompt(
+            localCfg, turns, "(session resumed — generate next question only)",
+            "(resumed)", remaining);
+        auto result = InvokeLLM(prompt, llmCfg);
         wxTheApp->CallAfter([this, result]() {
             m_busy = false;
             if (!result.ok) {
@@ -290,13 +335,27 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
     m_skipBtn->Disable();
     m_statusLabel->SetLabel("Scoring…");
 
-    int remaining = m_cfg.totalQuestions - (int)m_turns.size() - 1;
-    std::string prompt = BuildScoringAndNextPrompt(
-        m_cfg, m_turns, m_currentQuestion, answer, remaining);
-    LLMConfig cfg = m_llmCfg;
+    int         remaining       = m_cfg.totalQuestions - (int)m_turns.size() - 1;
+    ExamConfig  examCfg         = m_cfg;
+    LLMConfig   llmCfg          = m_llmCfg;
+    std::string projectDir      = m_projectDir;
+    std::string currentQuestion = m_currentQuestion;
+    std::vector<QuestionTurn> turns = m_turns;
 
-    std::thread([this, answer, prompt, cfg, remaining]() {
-        auto result = InvokeLLM(prompt, cfg);
+    std::thread([this, answer, examCfg, llmCfg, projectDir, currentQuestion, turns, remaining]() {
+        ExamConfig localCfg = examCfg;
+        if (!localCfg.focusAreaList.empty())
+            localCfg.focusAreas = PickFocusArea(localCfg.focusAreaList);
+        if (localCfg.useCorpus) {
+            std::string ragQuery = localCfg.focusAreas.empty()
+                                   ? currentQuestion : localCfg.focusAreas;
+            std::string ctx = CorpusContextFor(projectDir, ragQuery,
+                                               llmCfg.ollamaUrl, "Exam");
+            if (!ctx.empty()) localCfg.projectContext = ctx;
+        }
+        std::string prompt = BuildScoringAndNextPrompt(
+            localCfg, turns, currentQuestion, answer, remaining);
+        auto result = InvokeLLM(prompt, llmCfg);
         wxTheApp->CallAfter([this, answer, result, remaining]() {
             m_busy = false;
             if (!result.ok) {
@@ -392,6 +451,13 @@ std::string ExamPanel::BuildExamHTML() const {
 #chat-overlay { display:none; position:fixed; inset:0; z-index:9999;
                 cursor:pointer; background:transparent; }
 #chat-overlay.active { display:block; }
+#deepdive-btn { position:fixed; bottom:1.4em; right:1.4em; z-index:100;
+                background:var(--link); color:#fff; border:none;
+                border-radius:50%; width:48px; height:48px;
+                font-size:1.4em; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.35);
+                display:flex; align-items:center; justify-content:center;
+                text-decoration:none; }
+#deepdive-btn:hover { opacity:.85; }
 </style>
 )";
 
@@ -400,7 +466,12 @@ std::string ExamPanel::BuildExamHTML() const {
         overlay = "<div id='chat-overlay' class='active' "
                   "onclick=\"window.location='testtaker://closechat'\"></div>";
 
-    return BuildHTML(extraCSS + overlay + body.str(), "Exam", m_darkMode);
+    std::string deepdiveBtn;
+    if (m_active)
+        deepdiveBtn = "<a id='deepdive-btn' href='testtaker://deepdive' "
+                      "title='Set focus areas for remaining questions'>&#x1F3AF;</a>";
+
+    return BuildHTML(extraCSS + overlay + deepdiveBtn + body.str(), "Exam", m_darkMode);
 }
 
 // ---------------------------------------------------------------------------
@@ -514,6 +585,12 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         m_chatOpen = false;
         if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
         Render();
+        return;
+    }
+
+    if (url == "testtaker://deepdive") {
+        evt.Veto();
+        if (m_onDeepDive) m_onDeepDive();
         return;
     }
 

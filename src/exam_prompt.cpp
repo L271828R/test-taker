@@ -1,6 +1,27 @@
 #include "exam_prompt.h"
 #include "markdown.h"
+#include <random>
 #include <sstream>
+
+// ---------------------------------------------------------------------------
+std::string PickFocusArea(const std::vector<FocusArea>& areas) {
+    if (areas.empty()) return "";
+    if (areas.size() == 1) return areas[0].text;
+
+    int totalWeight = 0;
+    for (const auto& a : areas) totalWeight += std::max(1, a.stars);
+
+    static std::mt19937 rng{std::random_device{}()};
+    std::uniform_int_distribution<int> dist(1, totalWeight);
+    int pick = dist(rng);
+
+    int accum = 0;
+    for (const auto& a : areas) {
+        accum += std::max(1, a.stars);
+        if (pick <= accum) return a.text;
+    }
+    return areas.back().text;
+}
 
 // ---------------------------------------------------------------------------
 std::string BuildFirstQuestionPrompt(const ExamConfig& cfg) {
@@ -10,6 +31,11 @@ std::string BuildFirstQuestionPrompt(const ExamConfig& cfg) {
 
     if (!cfg.instructions.empty()) {
         out << "Specific focus for this session: " << cfg.instructions << "\n\n";
+    }
+
+    if (!cfg.focusAreas.empty()) {
+        out << "Focus areas (prioritise questions on these sub-topics): "
+            << cfg.focusAreas << "\n\n";
     }
 
     if (!cfg.projectContext.empty()) {
@@ -46,6 +72,11 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
 
     if (!cfg.instructions.empty()) {
         out << "Specific focus for this session: " << cfg.instructions << "\n\n";
+    }
+
+    if (!cfg.focusAreas.empty()) {
+        out << "Focus areas (prioritise questions on these sub-topics): "
+            << cfg.focusAreas << "\n\n";
     }
 
     if (!cfg.projectContext.empty()) {

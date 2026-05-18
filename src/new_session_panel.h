@@ -6,6 +6,7 @@
 #include <wx/combobox.h>
 #include <wx/statline.h>
 #include "exam_prompt.h"
+#include "focus_list_panel.h"
 #include "llm.h"
 
 class NewSessionPanel : public wxPanel {
@@ -20,13 +21,20 @@ public:
     // Called when a project is activated in the Projects tab.
     void SyncProject(const std::string& projectDir);
 
+    // Pre-fill session fields from the 🎯 deep-dive dialog.
+    void PreFill(const std::string&          topic,
+                 const std::vector<FocusArea>& focusAreas,
+                 const std::string&          difficulty,
+                 int                         questionCount);
+
 private:
     StartCallback m_onStart;
     std::string   m_activeProjectDir;
 
     wxStaticText* m_projectLabel   = nullptr;
     wxTextCtrl*   m_topicCtrl      = nullptr;  // short label (one line)
-    wxTextCtrl*   m_instrCtrl      = nullptr;  // free-form focus instructions
+    wxTextCtrl*     m_instrCtrl      = nullptr;  // free-form focus instructions
+    FocusListPanel* m_focusListPanel = nullptr;  // weighted focus-area list
     wxChoice*     m_difficultyCtrl = nullptr;
     wxSpinCtrl*   m_countCtrl      = nullptr;
     wxChoice*     m_backendChoice  = nullptr;

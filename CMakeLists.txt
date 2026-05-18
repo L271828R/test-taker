@@ -129,6 +129,7 @@ set(SOURCES
     src/embeddings.cpp
     src/corpus_panel.cpp
     src/rag_logger.cpp
+    src/focus_list_panel.cpp
 )
 add_executable(test-taker ${SOURCES})
 add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
