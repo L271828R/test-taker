@@ -31,6 +31,9 @@ struct AppState {
     // Last active session file (basename only); kept even when session is complete
     // so the Exam tab can display completed turns read-only on next startup.
     std::string lastSessionFile;
+
+    // Focus-area list serialized as "stars@@text|stars@@text|..."
+    std::string focusAreas;
 };
 
 AppState ParseState(const std::string& content);

@@ -88,7 +88,7 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
         for (const auto& t : history) {
             out << "Q: " << t.question << "\n";
             if (t.userAnswer.empty())
-                out << "User: (skipped — did not know)\n";
+                out << "User: (none)\n";
             else
                 out << "User: " << t.userAnswer << "\n";
             out << "SCORE: " << ScoreToString(t.score) << "\n\n";
@@ -96,31 +96,51 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
     }
 
     int questionNumber = (int)history.size() + 1;
-    out << "The user just answered question " << questionNumber
-        << " of " << cfg.totalQuestions << ":\n\n"
-        << "Question: " << currentQuestion << "\n";
 
-    if (userAnswer.empty())
-        out << "User's answer: (skipped — did not know)\n\n";
-    else
-        out << "User's answer: " << userAnswer << "\n\n";
+    if (userAnswer.empty()) {
+        // Skipped: omit user-answer entirely so the model has nothing to narrate about.
+        // The app sets Score::Skipped; only EXPLANATION + NEXT_QUESTION are needed.
+        out << "The student skipped question " << questionNumber
+            << " of " << cfg.totalQuestions << " (did not attempt an answer).\n\n"
+            << "Question: " << currentQuestion << "\n\n";
 
-    out << "Your task — respond with exactly three lines in this order, nothing else:\n\n"
-           "1. Score the answer:       SCORE: correct  OR  SCORE: partial  OR  SCORE: missed  OR  SCORE: skipped\n"
-           "2. Explain the answer:     EXPLANATION: <your explanation in 2-5 sentences>\n";
-
-    if (questionsRemaining > 0) {
-        out << "3. Ask the next question:  NEXT_QUESTION: <question text only>\n\n"
-               "Output format (exactly):\n"
-               "SCORE: ...\n"
-               "EXPLANATION: ...\n"
-               "NEXT_QUESTION: ...\n";
+        out << "Respond with exactly two lines:\n\n"
+               "EXPLANATION: <explain the correct answer in 2-5 sentences. Begin directly with the answer.>\n";
+        if (questionsRemaining > 0) {
+            out << "NEXT_QUESTION: <next question text only>\n\n"
+                   "Output format (exactly):\n"
+                   "EXPLANATION: ...\n"
+                   "NEXT_QUESTION: ...\n";
+        } else {
+            out << "NEXT_QUESTION: \n\n"
+                   "Output format (exactly):\n"
+                   "EXPLANATION: ...\n"
+                   "NEXT_QUESTION: \n";
+        }
     } else {
-        out << "3. No more questions:      NEXT_QUESTION: \n\n"
-               "Output format (exactly):\n"
-               "SCORE: ...\n"
-               "EXPLANATION: ...\n"
-               "NEXT_QUESTION: \n";
+        out << "The user just answered question " << questionNumber
+            << " of " << cfg.totalQuestions << ":\n\n"
+            << "Question: " << currentQuestion << "\n"
+            << "User's answer: " << userAnswer << "\n\n";
+
+        out << "Your task — respond with exactly three lines in this order, nothing else:\n\n"
+               "1. Score the answer:       SCORE: correct  OR  SCORE: partial  OR  SCORE: missed\n"
+               "2. Explain the answer:     EXPLANATION: <state the correct answer and explain it in 2-5 sentences."
+               " Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer.>\n";
+
+        if (questionsRemaining > 0) {
+            out << "3. Ask the next question:  NEXT_QUESTION: <question text only>\n\n"
+                   "Output format (exactly):\n"
+                   "SCORE: ...\n"
+                   "EXPLANATION: ...\n"
+                   "NEXT_QUESTION: ...\n";
+        } else {
+            out << "3. No more questions:      NEXT_QUESTION: \n\n"
+                   "Output format (exactly):\n"
+                   "SCORE: ...\n"
+                   "EXPLANATION: ...\n"
+                   "NEXT_QUESTION: \n";
+        }
     }
 
     return out.str();
@@ -158,19 +178,25 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput) {
     std::istringstream ss(llmOutput);
     std::string line;
     int found = 0;
+    bool inExplanation = false;
 
     while (std::getline(ss, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
 
         if (line.rfind("SCORE: ", 0) == 0) {
+            inExplanation = false;
             resp.score = ScoreFromString(line.substr(7));
             ++found;
         } else if (line.rfind("EXPLANATION: ", 0) == 0) {
             resp.explanation = line.substr(13);
+            inExplanation = true;
             ++found;
         } else if (line.rfind("NEXT_QUESTION: ", 0) == 0) {
+            inExplanation = false;
             resp.nextQuestion = line.substr(15);
             ++found;
+        } else if (inExplanation && !line.empty()) {
+            resp.explanation += " " + line;
         }
     }
 

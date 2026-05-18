@@ -4,10 +4,12 @@
 enum class LLMBackend { ClaudeP, CodexCLI, GeminiCLI, Ollama, API, Clipboard };
 
 struct LLMConfig {
-    LLMBackend  backend     = LLMBackend::Clipboard;
+    LLMBackend  backend          = LLMBackend::Clipboard;
     std::string apiKey;
-    std::string ollamaModel = "llama3";
-    std::string ollamaUrl   = "http://localhost:11434";
+    std::string ollamaModel      = "llama3";
+    std::string ollamaUrl        = "http://localhost:11434";
+    bool        ollamaStructured = false; // true = content-creation (JSON+structured prompt)
+                                          // false = plain text (exam/chat)
 };
 
 struct LLMResult {

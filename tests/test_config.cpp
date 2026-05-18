@@ -144,5 +144,17 @@ int test_config() {
         }
     }
 
+    // ParseState reads focusAreas (serialized focus-area list).
+    {
+        AppState st = ParseState("focusAreas = 3@@Presigned URLs|5@@Lifecycle rules\n");
+        bool ok = st.focusAreas == "3@@Presigned URLs|5@@Lifecycle rules";
+        if (!ok) {
+            std::cerr << "FAIL [state-focus-areas]: got '" << st.focusAreas << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [state-focus-areas]\n";
+        }
+    }
+
     return failures;
 }

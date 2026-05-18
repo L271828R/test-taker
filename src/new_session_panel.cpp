@@ -10,6 +10,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <wx/button.h>
 #include <wx/choice.h>
 #include <wx/combobox.h>
@@ -23,6 +24,35 @@
 #include <wx/textdlg.h>
 
 namespace fs = std::filesystem;
+
+// ---------------------------------------------------------------------------
+// Focus-area list persistence helpers
+// Format: "stars@@text|stars@@text|..."
+// ---------------------------------------------------------------------------
+static std::string SerializeFocusAreas(const std::vector<FocusArea>& areas) {
+    std::string out;
+    for (const auto& a : areas) {
+        if (!out.empty()) out += "|";
+        out += std::to_string(a.stars) + "@@" + a.text;
+    }
+    return out;
+}
+
+static std::vector<FocusArea> DeserializeFocusAreas(const std::string& s) {
+    std::vector<FocusArea> result;
+    if (s.empty()) return result;
+    std::string item;
+    std::istringstream ss(s);
+    while (std::getline(ss, item, '|')) {
+        auto sep = item.find("@@");
+        if (sep == std::string::npos) continue;
+        int stars = std::stoi(item.substr(0, sep));
+        std::string text = item.substr(sep + 2);
+        if (!text.empty())
+            result.push_back({text, std::max(1, std::min(5, stars))});
+    }
+    return result;
+}
 
 enum {
     ID_NS_START          = wxID_HIGHEST + 300,
@@ -299,6 +329,7 @@ void NewSessionPanel::SaveFormState() const {
     AppState st = LoadAppState();
     st.topic        = m_topicCtrl->GetValue().ToStdString();
     st.instructions = m_instrCtrl->GetValue().ToStdString();
+    st.focusAreas   = SerializeFocusAreas(m_focusListPanel->GetAreas());
     st.backend      = m_backendChoice->GetString(
         m_backendChoice->GetSelection()).ToStdString();
     st.apiKey       = m_apiKeyCtrl->GetValue().ToStdString();
@@ -319,6 +350,8 @@ void NewSessionPanel::RestoreFormState() {
             UpdateBackendFields();
         }
     }
+    if (!st.focusAreas.empty())
+        m_focusListPanel->SetAreas(DeserializeFocusAreas(st.focusAreas));
     if (!st.apiKey.empty())
         m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));
     if (!st.ollamaModel.empty())

@@ -368,11 +368,14 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
 
             auto scored = ParseScoredResponse(result.text);
             if (!scored.parseOk) {
-                // Graceful fallback: treat whole response as explanation
-                scored.score       = answer.empty() ? Score::Skipped : Score::Missed;
+                scored.score       = Score::Missed;
                 scored.explanation = result.text;
                 scored.parseOk     = true;
             }
+            // App owns the skipped state — the model never picks it
+            if (answer.empty()) scored.score = Score::Skipped;
+            // If model omitted EXPLANATION, use the full raw response
+            if (scored.explanation.empty()) scored.explanation = result.text;
 
             QuestionTurn turn;
             turn.question    = m_currentQuestion;

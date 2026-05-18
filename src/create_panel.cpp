@@ -656,9 +656,10 @@ void CreatePanel::OnGenerate(wxCommandEvent&) {
     }
 
     LLMConfig cfg;
-    cfg.backend     = backend;
-    cfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
-    cfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
+    cfg.backend          = backend;
+    cfg.apiKey           = m_apiKeyCtrl->GetValue().ToStdString();
+    cfg.ollamaModel      = m_ollamaModel->GetValue().ToStdString();
+    cfg.ollamaStructured = true; // content creation needs JSON+structured prompt
 
     std::string projDirStr = projDir.ToStdString();
     std::string topicStr = req.topic;

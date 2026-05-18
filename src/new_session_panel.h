@@ -27,6 +27,8 @@ public:
                  const std::string&          difficulty,
                  int                         questionCount);
 
+    void SaveFormState() const;
+
 private:
     StartCallback m_onStart;
     std::string   m_activeProjectDir;
@@ -48,7 +50,6 @@ private:
     wxSizerItem*  m_corpusSizer    = nullptr;
 
     void UpdateBackendFields();
-    void SaveFormState() const;
     void RestoreFormState();
     std::string GenerateSessionFilename() const;
     void SetStatus(const wxString& msg);

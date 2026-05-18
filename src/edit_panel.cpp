@@ -49,8 +49,8 @@ static std::string applescript_string(const std::string& s) {
 
 static LLMConfig llm_config_from_state(const AppState& st) {
     LLMConfig cfg;
-    cfg.backend = LLMBackend::Clipboard;
-    cfg.backend = BackendFromLabel(st.backend);
+    cfg.backend          = BackendFromLabel(st.backend);
+    cfg.ollamaStructured = true; // edit panel always uses structured JSON output
     if (!st.apiKey.empty())      cfg.apiKey      = st.apiKey;
     if (!st.ollamaModel.empty()) cfg.ollamaModel = st.ollamaModel;
     return cfg;

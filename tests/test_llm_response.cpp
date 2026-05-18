@@ -75,6 +75,32 @@ int test_llm_response() {
         }
     }
 
+    // Plain Ollama response (exam/chat mode): extract response field directly
+    {
+        std::string raw = R"({"model":"phi4-mini","response":"What is a vtable?","done":true})";
+        std::string text = ExtractJSONString(raw, "response");
+        bool ok = (text == "What is a vtable?");
+        if (!ok) {
+            std::cerr << "FAIL [ollama-plain-response]: got '" << text << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [ollama-plain-response]\n";
+        }
+    }
+
+    // ollamaStructured defaults to false — plain mode is the default
+    {
+        LLMConfig cfg;
+        cfg.backend = LLMBackend::Ollama;
+        bool ok = !cfg.ollamaStructured;
+        if (!ok) {
+            std::cerr << "FAIL [ollama-plain-default]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [ollama-plain-default]\n";
+        }
+    }
+
     {
         bool ok = BackendFromLabel("Gemini CLI") == LLMBackend::GeminiCLI
                && BackendLabel(LLMBackend::GeminiCLI) == "Gemini CLI";

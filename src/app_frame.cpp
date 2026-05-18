@@ -314,5 +314,6 @@ void AppFrame::OnExit(wxCommandEvent&) { Close(); }
 
 void AppFrame::OnClose(wxCloseEvent& evt) {
     Logger::get().log("=== AppFrame closing ===");
+    m_newSessionPage->SaveFormState();
     evt.Skip();
 }

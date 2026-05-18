@@ -125,18 +125,22 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
             result.error = "gemini CLI not found — check PATH or use Clipboard mode";
     }
     else if (cfg.backend == LLMBackend::Ollama) {
-        // Write JSON body to a second temp file to avoid shell quoting issues.
         std::string jsonFile = tmpFile + ".json";
         {
             std::ofstream jf(jsonFile);
-            // Escape the prompt for JSON by re-using the file content via @.
-            // We use --data-binary @file to avoid any shell interpolation.
-            // Build a minimal JSON object around the raw prompt.
-            std::string structuredPrompt = BuildOllamaStructuredPrompt(prompt);
-            jf << "{\"model\":\"" << JsonEscape(cfg.ollamaModel) << "\","
-               << "\"stream\":false,"
-               << "\"format\":\"json\","
-               << "\"prompt\":\"" << JsonEscape(structuredPrompt) << "\"}";
+            if (cfg.ollamaStructured) {
+                // Content-creation mode: force JSON output with markdown schema.
+                std::string sp = BuildOllamaStructuredPrompt(prompt);
+                jf << "{\"model\":\"" << JsonEscape(cfg.ollamaModel) << "\","
+                   << "\"stream\":false,"
+                   << "\"format\":\"json\","
+                   << "\"prompt\":\"" << JsonEscape(sp) << "\"}";
+            } else {
+                // Plain-text mode: exam, chat, turn-chat — just send the prompt as-is.
+                jf << "{\"model\":\"" << JsonEscape(cfg.ollamaModel) << "\","
+                   << "\"stream\":false,"
+                   << "\"prompt\":\"" << JsonEscape(prompt) << "\"}";
+            }
         }
         std::string cmd = "curl -s -X POST \"" + cfg.ollamaUrl + "/api/generate\""
                           " -H 'Content-Type: application/json'"
@@ -144,9 +148,17 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
         auto raw = run_shell(cmd);
         fs::remove(jsonFile);
         if (!raw.ok) return raw;
-        std::string text = ExtractOllamaMarkdown(raw.text);
-        if (text.empty())
-            return {false, "", "Ollama returned unexpected JSON: " + raw.text.substr(0, 200)};
+
+        std::string text;
+        if (cfg.ollamaStructured) {
+            text = ExtractOllamaMarkdown(raw.text);
+            if (text.empty())
+                return {false, "", "Ollama returned unexpected JSON: " + raw.text.substr(0, 200)};
+        } else {
+            text = ExtractJSONString(raw.text, "response");
+            if (text.empty())
+                return {false, "", "Ollama returned empty response: " + raw.text.substr(0, 200)};
+        }
         result = {true, text, ""};
     }
     else if (cfg.backend == LLMBackend::API) {

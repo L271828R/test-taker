@@ -181,17 +181,51 @@ int test_exam_prompt() {
         }
     }
 
-    // BuildScoringAndNextPrompt with empty answer uses skipped indicator
+    // BuildScoringAndNextPrompt with empty answer must NOT show "User's answer" at all.
+    // Showing any user-answer context (even "(none)") gives small models something to
+    // narrate about. The prompt must only ask for an explanation of the correct answer.
     {
         std::string p = BuildScoringAndNextPrompt(cfg, {}, "What is a VPC?", "", 2);
-        bool ok = p.find("skipped") != std::string::npos
-               || p.find("did not know") != std::string::npos
-               || p.find("no answer") != std::string::npos;
-        if (!ok) {
-            std::cerr << "FAIL [scoring-skipped-indicator]\n";
+        bool noUserAnswer = p.find("User's answer") == std::string::npos;
+        bool hasExplain   = p.find("EXPLANATION:") != std::string::npos;
+        if (!noUserAnswer || !hasExplain) {
+            std::cerr << "FAIL [scoring-skipped-no-user-context]:"
+                      << " noUserAnswer=" << noUserAnswer
+                      << " hasExplain=" << hasExplain << "\n";
             ++failures;
         } else {
-            std::cout << "PASS [scoring-skipped-indicator]\n";
+            std::cout << "PASS [scoring-skipped-no-user-context]\n";
+        }
+    }
+
+    // BuildScoringAndNextPrompt must NOT offer "skipped" as a model score option.
+    // "skipped" is set by the app, not the model; offering it lets small models
+    // pick it for real answers.
+    {
+        std::string p = BuildScoringAndNextPrompt(cfg, {}, "What is a VPC?", "It's a network.", 2);
+        bool noSkippedOption = p.find("SCORE: skipped") == std::string::npos;
+        if (!noSkippedOption) {
+            std::cerr << "FAIL [scoring-no-skipped-option]: prompt offers 'SCORE: skipped'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [scoring-no-skipped-option]\n";
+        }
+    }
+
+    // BuildScoringAndNextPrompt: for non-empty answers, EXPLANATION instruction must
+    // tell the model to state the correct answer and not narrate the user's response.
+    {
+        std::string p = BuildScoringAndNextPrompt(cfg, {}, "What is a VPC?", "A network.", 2);
+        bool hasAnswer   = p.find("correct answer") != std::string::npos;
+        bool noNarrate   = p.find("Do not mention the user") != std::string::npos
+                        || p.find("do not mention the user") != std::string::npos;
+        if (!hasAnswer || !noNarrate) {
+            std::cerr << "FAIL [scoring-explanation-reveals-answer]:"
+                      << " hasAnswer=" << hasAnswer
+                      << " noNarrate=" << noNarrate << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [scoring-explanation-reveals-answer]\n";
         }
     }
 
@@ -260,6 +294,28 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [parse-scored-missed]\n";
+        }
+    }
+
+    // ParseScoredResponse: multi-line EXPLANATION is concatenated (small models wrap text)
+    {
+        std::string raw =
+            "SCORE: correct\n"
+            "EXPLANATION: A VPC is a Virtual Private Cloud.\n"
+            "It provides isolated network infrastructure in AWS.\n"
+            "NEXT_QUESTION: What is a subnet?\n";
+        auto resp = ParseScoredResponse(raw);
+        bool ok = resp.parseOk
+               && resp.score == Score::Correct
+               && resp.explanation.find("Virtual Private Cloud") != std::string::npos
+               && resp.explanation.find("isolated network") != std::string::npos
+               && resp.nextQuestion == "What is a subnet?";
+        if (!ok) {
+            std::cerr << "FAIL [parse-scored-multiline]: parseOk=" << resp.parseOk
+                      << " explanation='" << resp.explanation << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-scored-multiline]\n";
         }
     }
 
