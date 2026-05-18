@@ -477,5 +477,31 @@ int test_exam_prompt() {
         }
     }
 
+    // RenderHistoryGroups: contains session label, question text, and clear link
+    {
+        QuestionTurn t;
+        t.question    = "What is RAII?";
+        t.userAnswer  = "Resource Acquisition Is Initialisation.";
+        t.score       = Score::Correct;
+        t.explanation = "Correct. RAII ties resource lifetime to object scope.";
+
+        std::vector<std::pair<std::string, std::vector<QuestionTurn>>> groups;
+        groups.push_back({"Session — 2026-05-18", {t}});
+
+        std::string html = RenderHistoryGroups(groups);
+        bool ok = html.find("Session \xe2\x80\x94 2026-05-18") != std::string::npos  // em-dash
+               || html.find("Session") != std::string::npos
+               && html.find("2026-05-18") != std::string::npos;
+        bool hasQ    = html.find("What is RAII?") != std::string::npos;
+        bool hasClear = html.find("testtaker://clear-history") != std::string::npos;
+        if (!ok || !hasQ || !hasClear) {
+            std::cerr << "FAIL [render-history-groups]: ok=" << ok
+                      << " hasQ=" << hasQ << " hasClear=" << hasClear << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-history-groups]\n";
+        }
+    }
+
     return failures;
 }

@@ -2,6 +2,7 @@
 #include "markdown.h"
 #include <random>
 #include <sstream>
+#include <utility>
 
 // ---------------------------------------------------------------------------
 std::string PickFocusArea(const std::vector<FocusArea>& areas) {
@@ -218,7 +219,8 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn:hover .flag-btn { opacity:1; }
 .turn:hover .note-btn { opacity:1; }
 .turn:hover .discuss-btn { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn {
+.turn:hover .save-btn { opacity:1; }
+.flag-btn, .note-btn, .discuss-btn, .save-btn {
             opacity:0; transition:opacity 0.15s;
             background:none; border:1px solid var(--border);
             border-radius:4px; padding:0.15em 0.5em;
@@ -227,6 +229,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
 .note-btn.has-note { color:var(--link); border-color:var(--link); opacity:1; }
 .discuss-btn.has-chat { color:var(--link); border-color:var(--link); opacity:1; }
+.save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
 .turn-note { margin-top:0.5em; padding:0.4em 0.6em;
              background:var(--surface); border-left:3px solid var(--link);
              font-size:0.9em; color:var(--text-muted); white-space:pre-wrap; }
@@ -261,6 +264,8 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
         std::string discussLabel = chatCount > 0
             ? "&#x1F4AC; " + std::to_string(chatCount)
             : "&#x1F4AC; discuss";
+        std::string saveClass = t.saved ? " saved" : "";
+        std::string saveLabel = t.saved ? "&#x1F516; saved" : "&#x1F516; save";
 
         out << "<div class='turn'>"
             << "<div class='turn-toolbar'>"
@@ -268,6 +273,8 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
             << i << "'>" << discussLabel << "</a>"
             << "<a class='note-btn" << noteClass << "' href='testtaker://note/"
             << i << "'>" << noteLabel << "</a>"
+            << "<a class='save-btn" << saveClass << "' href='testtaker://save/"
+            << i << "'>" << saveLabel << "</a>"
             << "<a class='flag-btn" << flagClass << "' href='testtaker://flag/"
             << i << "'>" << flagLabel << "</a>"
             << "</div>"
@@ -285,5 +292,68 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
         out << "</div>\n";
     }
 
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string RenderHistoryGroups(
+    const std::vector<std::pair<std::string, std::vector<QuestionTurn>>>& groups) {
+    std::ostringstream out;
+
+    out << R"(<style>
+.history-header { display:flex; justify-content:space-between; align-items:center;
+                  margin-bottom:0.8em; }
+.history-header h3 { margin:0; font-size:0.9em; color:var(--text-muted); text-transform:uppercase;
+                     letter-spacing:0.05em; }
+.clear-hist-btn { font-size:0.8em; color:var(--text-muted); text-decoration:none;
+                  border:1px solid var(--border); border-radius:4px; padding:0.1em 0.5em; }
+.clear-hist-btn:hover { color:#cf222e; border-color:#cf222e; }
+.hist-group { margin-bottom:1.6em; }
+.hist-group-label { font-size:0.78em; font-weight:600; color:var(--text-muted);
+                    text-transform:uppercase; letter-spacing:0.05em;
+                    margin-bottom:0.4em; padding-bottom:0.2em;
+                    border-bottom:1px solid var(--border); }
+.hist-turn { border-bottom:1px solid var(--border); margin-bottom:0.8em;
+             border-radius:4px; padding:0.6em 0.8em; opacity:0.75; }
+.hist-question { font-weight:600; margin-bottom:.3em; font-size:0.95em; }
+.hist-answer   { color:var(--text-muted); font-size:.88em; margin-bottom:.25em; }
+.hist-verdict  { display:inline-block; padding:.1em .5em; border-radius:4px;
+                 font-size:.8em; font-weight:600; margin-bottom:.3em; }
+.hist-verdict.correct { background:#1a7f37; color:#fff; }
+.hist-verdict.partial  { background:#9a6700; color:#fff; }
+.hist-verdict.missed   { background:#cf222e; color:#fff; }
+.hist-verdict.skipped  { background:#57606a; color:#fff; }
+.hist-expl { font-size:.88em; }
+.hist-separator { border:none; border-top:2px solid var(--border);
+                  margin:2em 0 1.4em; }
+</style>
+)";
+
+    out << "<div class='history-header'>"
+        << "<h3>Session history</h3>"
+        << "<a class='clear-hist-btn' href='testtaker://clear-history'>&#x2715; Clear history</a>"
+        << "</div>\n";
+
+    for (const auto& [label, turns] : groups) {
+        out << "<div class='hist-group'>"
+            << "<div class='hist-group-label'>" << EscapeHTML(label) << "</div>";
+        for (const auto& t : turns) {
+            std::string scoreClass =
+                t.score == Score::Correct ? "correct" :
+                t.score == Score::Partial ? "partial" :
+                t.score == Score::Missed  ? "missed"  : "skipped";
+            out << "<div class='hist-turn'>"
+                << "<div class='hist-question'>" << RenderMarkdown(t.question) << "</div>"
+                << "<div class='hist-answer'>"
+                << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
+                << "</div>"
+                << "<div class='hist-verdict " << scoreClass << "'>" << ScoreLabel(t.score) << "</div>"
+                << "<div class='hist-expl'>" << RenderMarkdown(t.explanation) << "</div>"
+                << "</div>\n";
+        }
+        out << "</div>\n";
+    }
+
+    out << "<hr class='hist-separator'>\n";
     return out.str();
 }

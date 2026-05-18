@@ -156,5 +156,21 @@ int test_config() {
         }
     }
 
+    // ParseState reads lastExamProjectDir (persists which project the New Session
+    // form was filled out for, so that on restart projectChanged stays false).
+    {
+        AppState st = ParseState(
+            "currentProject = CppInterview\n"
+            "lastExamProjectDir = /Users/me/projects/cpp-interview\n");
+        bool ok = st.lastExamProjectDir == "/Users/me/projects/cpp-interview";
+        if (!ok) {
+            std::cerr << "FAIL [state-last-exam-project-dir]: got '"
+                      << st.lastExamProjectDir << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [state-last-exam-project-dir]\n";
+        }
+    }
+
     return failures;
 }

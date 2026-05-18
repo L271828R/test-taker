@@ -2,6 +2,8 @@
 #include "markdown.h"
 #include "html_template.h"
 #include "logger.h"
+#include "saved_convos.h"
+#include <ctime>
 #include <filesystem>
 #include <sstream>
 #include <thread>
@@ -14,12 +16,15 @@ enum { ID_TC_SEND = wxID_HIGHEST + 200, ID_TC_CLOSE };
 wxBEGIN_EVENT_TABLE(TurnChatPanel, wxPanel)
     EVT_BUTTON(ID_TC_SEND,  TurnChatPanel::OnSend)
     EVT_BUTTON(ID_TC_CLOSE, TurnChatPanel::OnClose)
+    EVT_WEBVIEW_NAVIGATING(wxID_ANY, TurnChatPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
 // ---------------------------------------------------------------------------
 TurnChatPanel::TurnChatPanel(wxWindow* parent, bool darkMode,
-                              std::function<void()> onClose)
-    : wxPanel(parent), m_darkMode(darkMode), m_onClose(std::move(onClose))
+                              std::function<void()> onClose,
+                              SavedConvoCallback    onSavedConvo)
+    : wxPanel(parent), m_darkMode(darkMode),
+      m_onClose(std::move(onClose)), m_onSavedConvo(std::move(onSavedConvo))
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
@@ -67,13 +72,14 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
                               int                 turnIndex,
                               const std::string&  sessionFile,
                               const LLMConfig&    llmCfg) {
-    m_examTurn    = turn;
-    m_turnIndex   = turnIndex;
-    m_sessionFile = sessionFile;
-    m_projectDir  = fs::path(sessionFile).parent_path().string();
-    m_llmCfg      = llmCfg;
-    m_busy        = false;
-    m_turns       = LoadTurnChat(sessionFile, turnIndex);
+    m_examTurn     = turn;
+    m_turnIndex    = turnIndex;
+    m_sessionFile  = sessionFile;
+    m_projectDir   = fs::path(sessionFile).parent_path().string();
+    m_llmCfg       = llmCfg;
+    m_busy         = false;
+    m_savedIndices.clear();
+    m_turns        = LoadTurnChat(sessionFile, turnIndex);
     m_sendBtn->Enable();
     m_inputCtrl->Clear();
 
@@ -108,6 +114,7 @@ void TurnChatPanel::Reset() {
     m_turns.clear();
     m_examTurn    = {};
     m_busy        = false;
+    m_savedIndices.clear();
     m_sendBtn->Disable();
     m_titleLabel->SetLabel("Follow-up discussion");
     Render();
@@ -141,6 +148,13 @@ body { padding: 12px; }
              vertical-align:middle; background:)" << scoreColour << R"(; }
 .ctx-expl { color:var(--text-muted); vertical-align:middle; }
 .turn { margin-bottom:16px; }
+.turn-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; }
+.turn:hover .tc-save-btn { opacity:1; }
+.tc-save-btn { opacity:0; transition:opacity 0.15s;
+  background:none; border:1px solid var(--border); border-radius:4px;
+  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
+  color:var(--text-muted); text-decoration:none; white-space:nowrap; }
+.tc-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
 .q { background:var(--surface); border:1px solid var(--border);
      border-radius:8px 8px 8px 2px; padding:8px 12px;
      margin-bottom:6px; font-weight:500; }
@@ -162,8 +176,16 @@ body { padding: 12px; }
              << "<span class='ctx-expl'>" << EscapeHTML(m_examTurn.explanation) << "</span>"
              << "</div>";
 
-        for (const auto& t : m_turns) {
+        for (int i = 0; i < (int)m_turns.size(); ++i) {
+            const auto& t = m_turns[i];
+            bool isSaved = m_savedIndices.count(i) > 0;
+            std::string saveClass = isSaved ? " saved" : "";
+            std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
             body << "<div class='turn'>"
+                 << "<div class='turn-toolbar'>"
+                 << "<a class='tc-save-btn" << saveClass << "' href='testtaker://tc-save/"
+                 << i << "'>" << saveLabel << "</a>"
+                 << "</div>"
                  << "<div class='q'>" << RenderMarkdown(t.question) << "</div>"
                  << "<div class='a'>" << RenderMarkdown(t.answer) << "</div>"
                  << "</div>\n";
@@ -229,4 +251,32 @@ void TurnChatPanel::OnSend(wxCommandEvent&) {
             Render();
         });
     }).detach();
+}
+
+// ---------------------------------------------------------------------------
+void TurnChatPanel::OnWebViewNav(wxWebViewEvent& evt) {
+    wxString url = evt.GetURL();
+
+    if (url.StartsWith("testtaker://tc-save/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(20).ToLong(&idx);  // "testtaker://tc-save/" is 20 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        if (m_savedIndices.count((int)idx)) return;  // already saved
+
+        std::time_t now = std::time(nullptr);
+        char dateBuf[16];
+        std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", std::localtime(&now));
+
+        const auto& t = m_turns[idx];
+        AppendSavedConvo(m_projectDir, t.question, t.answer, dateBuf);
+        m_savedIndices.insert((int)idx);
+        Logger::get().log("TurnChat turn " + std::to_string(idx) + " saved to saved_convos.md");
+
+        if (m_onSavedConvo) m_onSavedConvo();
+        Render();
+        return;
+    }
+
+    evt.Skip();
 }

@@ -130,6 +130,8 @@ set(SOURCES
     src/corpus_panel.cpp
     src/rag_logger.cpp
     src/focus_list_panel.cpp
+    src/saved_convos.cpp
+    src/saved_panel.cpp
 )
 add_executable(test-taker ${SOURCES})
 add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
@@ -159,6 +161,7 @@ add_executable(test_test-taker
     tests/test_exam_prompt.cpp
     tests/test_turn_chat.cpp
     tests/test_corpus.cpp
+    tests/test_saved_convos.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -179,6 +182,7 @@ add_executable(test_test-taker
     src/corpus.cpp
     src/embeddings.cpp
     src/rag_logger.cpp
+    src/saved_convos.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})

@@ -2,6 +2,7 @@
 #include <wx/wx.h>
 #include <wx/webview.h>
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 #include "turn_chat.h"
@@ -11,8 +12,12 @@
 
 class TurnChatPanel : public wxPanel {
 public:
+    using SavedConvoCallback = std::function<void()>;
+
     // onClose is called when the user clicks the × button; caller should unsplit.
-    TurnChatPanel(wxWindow* parent, bool darkMode, std::function<void()> onClose);
+    TurnChatPanel(wxWindow* parent, bool darkMode,
+                  std::function<void()> onClose,
+                  SavedConvoCallback    onSavedConvo = {});
 
     // Load the context for a specific exam turn and show the panel.
     // turnIndex is the zero-based index into m_turns / the session file.
@@ -29,6 +34,8 @@ public:
 private:
     bool                  m_darkMode;
     std::function<void()> m_onClose;
+    SavedConvoCallback    m_onSavedConvo;
+    std::set<int>         m_savedIndices;
     int                   m_turnIndex  = -1;
     std::string           m_sessionFile;
     std::string           m_projectDir;
@@ -49,6 +56,7 @@ private:
 
     void OnSend(wxCommandEvent&);
     void OnClose(wxCommandEvent&);
+    void OnWebViewNav(wxWebViewEvent&);
 
     wxDECLARE_EVENT_TABLE();
 };

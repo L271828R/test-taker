@@ -92,6 +92,8 @@ std::vector<QuestionTurn> ParseSession(const std::string& body) {
             cur.explanation = decodeNewlines(line.substr(13));
         } else if (inTurn && line.rfind("NOTE: ", 0) == 0) {
             cur.note = decodeNewlines(line.substr(6));
+        } else if (inTurn && line.rfind("SAVED: ", 0) == 0) {
+            cur.saved = (line.substr(7) == "true");
         }
     }
     if (inTurn) turns.push_back(cur);
@@ -105,7 +107,8 @@ std::string SerializeSessionBody(const std::vector<QuestionTurn>& turns) {
         out << "Q: "           << encodeNewlines(t.question)    << "\n";
         out << "A: "           << encodeNewlines(t.userAnswer)  << "\n";
         out << "SCORE: "       << ScoreToString(t.score) << "\n";
-        out << "FLAG: "        << (t.flagged ? "true" : "false") << "\n";
+        out << "FLAG: "  << (t.flagged ? "true" : "false") << "\n";
+        out << "SAVED: " << (t.saved   ? "true" : "false") << "\n";
         out << "EXPLANATION: " << encodeNewlines(t.explanation) << "\n";
         if (!t.note.empty())
             out << "NOTE: " << encodeNewlines(t.note) << "\n";
@@ -241,5 +244,13 @@ bool SetTurnNote(const std::string& filePath, int index, const std::string& note
     return RewriteTurns(filePath, [index, &note](std::vector<QuestionTurn>& turns) {
         if (index >= 0 && index < (int)turns.size())
             turns[index].note = note;
+    });
+}
+
+// ---------------------------------------------------------------------------
+bool SetTurnSaved(const std::string& filePath, int index, bool saved) {
+    return RewriteTurns(filePath, [index, saved](std::vector<QuestionTurn>& turns) {
+        if (index >= 0 && index < (int)turns.size())
+            turns[index].saved = saved;
     });
 }

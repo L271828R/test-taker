@@ -13,6 +13,7 @@ class ExamPanel;
 class ReviewPanel;
 class ChatPanel;
 class CorpusPanel;
+class SavedPanel;
 
 enum {
     ID_THEME_LIGHT  = wxID_HIGHEST + 1,
@@ -36,6 +37,7 @@ private:
     ReviewPanel*      m_reviewPage      = nullptr;
     ChatPanel*        m_chatPage        = nullptr;
     CorpusPanel*      m_corpusPage      = nullptr;
+    SavedPanel*       m_savedPage       = nullptr;
 
     bool m_darkMode        = false;
     int  m_fontSizePercent = 100;

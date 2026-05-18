@@ -4,6 +4,7 @@
 #include "review_panel.h"
 #include "chat_panel.h"
 #include "corpus_panel.h"
+#include "saved_panel.h"
 #include "corpus.h"
 #include "exam_meta.h"
 #include "focus_list_panel.h"
@@ -15,7 +16,7 @@
 #include <fstream>
 
 // Notebook tab indices
-enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS };
+enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS, TAB_SAVED };
 
 wxBEGIN_EVENT_TABLE(AppFrame, wxFrame)
     EVT_MENU(ID_THEME_LIGHT,  AppFrame::OnThemeLight)
@@ -78,7 +79,8 @@ AppFrame::AppFrame()
     // Exam tab
     m_examPage = new ExamPanel(m_notebook,
         [this](const std::string& sessionFile){ OnSessionComplete(sessionFile); },
-        [this](){ OnDeepDiveRequested(); });
+        [this](){ OnDeepDiveRequested(); },
+        [this](){ if (m_savedPage) m_savedPage->Refresh(); });
 
     // Review tab
     m_reviewPage = new ReviewPanel(m_notebook,
@@ -87,10 +89,14 @@ AppFrame::AppFrame()
         });
 
     // Chat tab
-    m_chatPage = new ChatPanel(m_notebook, m_darkMode);
+    m_chatPage = new ChatPanel(m_notebook, m_darkMode,
+        [this](){ if (m_savedPage) m_savedPage->Refresh(); });
 
     // Corpus tab
     m_corpusPage = new CorpusPanel(m_notebook);
+
+    // Saved Convos tab
+    m_savedPage = new SavedPanel(m_notebook, m_darkMode);
 
     m_notebook->AddPage(m_projectPage,    "Projects");
     m_notebook->AddPage(m_newSessionPage, "New Session");
@@ -98,6 +104,7 @@ AppFrame::AppFrame()
     m_notebook->AddPage(m_reviewPage,     "Review");
     m_notebook->AddPage(m_chatPage,       "Chat");
     m_notebook->AddPage(m_corpusPage,     "Corpus");
+    m_notebook->AddPage(m_savedPage,      "Saved Convos");
 
     auto* frameSizer = new wxBoxSizer(wxVERTICAL);
     frameSizer->Add(m_notebook, 1, wxEXPAND);
@@ -128,6 +135,7 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
     }
     m_chatPage->SyncProject(projectDir, llmCfg, m_darkMode);
     m_corpusPage->SyncProject(projectDir, llmCfg.ollamaUrl);
+    m_savedPage->SyncProject(projectDir, m_darkMode);
 
     // Always reset the exam panel when switching projects. Any in-progress turns
     // are already persisted via AppendSessionTurn, so no data is lost.
@@ -205,6 +213,7 @@ void AppFrame::OnThemeLight(wxCommandEvent&) {
     wxConfig("TestTaker").Write("darkMode", false);
     m_examPage->SetDarkMode(false);
     m_chatPage->SetDarkMode(false);
+    m_savedPage->SetDarkMode(false);
 }
 
 void AppFrame::OnThemeDark(wxCommandEvent&) {
@@ -213,6 +222,7 @@ void AppFrame::OnThemeDark(wxCommandEvent&) {
     wxConfig("TestTaker").Write("darkMode", true);
     m_examPage->SetDarkMode(true);
     m_chatPage->SetDarkMode(true);
+    m_savedPage->SetDarkMode(true);
 }
 
 void AppFrame::OnViewLogs(wxCommandEvent&) {

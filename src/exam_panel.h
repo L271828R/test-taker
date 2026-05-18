@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 #include <wx/wx.h>
 #include <wx/webview.h>
@@ -15,10 +16,12 @@ class ExamPanel : public wxPanel {
 public:
     using SessionCompleteCallback = std::function<void(const std::string& sessionFile)>;
     using DeepDiveCallback        = std::function<void()>;
+    using SavedConvoCallback      = std::function<void()>;
 
     ExamPanel(wxWindow* parent,
               SessionCompleteCallback onSessionComplete,
-              DeepDiveCallback        onDeepDive = {});
+              DeepDiveCallback        onDeepDive     = {},
+              SavedConvoCallback      onSavedConvo   = {});
 
     void StartSession(const std::string& projectDir,
                       const std::string& sessionFile,
@@ -48,6 +51,9 @@ public:
 private:
     SessionCompleteCallback   m_onComplete;
     DeepDiveCallback          m_onDeepDive;
+    SavedConvoCallback        m_onSavedConvo;
+
+    using HistoryGroup = std::pair<std::string, std::vector<QuestionTurn>>;
 
     bool              m_active        = false;
     bool              m_busy          = false;
@@ -59,7 +65,8 @@ private:
     bool              m_darkMode      = false;
     int               m_questionIndex = 0;
     std::string       m_currentQuestion;
-    std::vector<QuestionTurn> m_turns;
+    std::vector<QuestionTurn>  m_turns;
+    std::vector<HistoryGroup>  m_historyGroups;  // turns from completed past sessions
 
     wxSplitterWindow* m_splitter     = nullptr;
     wxPanel*          m_leftPanel    = nullptr;

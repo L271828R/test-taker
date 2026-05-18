@@ -5,6 +5,8 @@
 #include "markdown.h"
 #include "meta.h"
 #include "logger.h"
+#include "saved_convos.h"
+#include <ctime>
 #include <fstream>
 #include <thread>
 #include <filesystem>
@@ -12,15 +14,17 @@
 
 namespace fs = std::filesystem;
 
-enum { ID_CP_SEND = wxID_HIGHEST + 600 };
+enum { ID_CP_SEND = wxID_HIGHEST + 600, ID_CP_CLEAR };
 
 wxBEGIN_EVENT_TABLE(ChatPanel, wxPanel)
-    EVT_BUTTON(ID_CP_SEND, ChatPanel::OnSend)
+    EVT_BUTTON(ID_CP_SEND,  ChatPanel::OnSend)
+    EVT_BUTTON(ID_CP_CLEAR, ChatPanel::OnClearChat)
+    EVT_WEBVIEW_NAVIGATING(wxID_ANY, ChatPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
 // ---------------------------------------------------------------------------
-ChatPanel::ChatPanel(wxWindow* parent, bool darkMode)
-    : wxPanel(parent), m_darkMode(darkMode)
+ChatPanel::ChatPanel(wxWindow* parent, bool darkMode, SavedConvoCallback onSavedConvo)
+    : wxPanel(parent), m_darkMode(darkMode), m_onSavedConvo(std::move(onSavedConvo))
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
@@ -31,7 +35,8 @@ ChatPanel::ChatPanel(wxWindow* parent, bool darkMode)
     m_inputCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
         wxDefaultPosition, wxSize(-1, 70),
         wxTE_MULTILINE);
-    m_sendBtn = new wxButton(this, ID_CP_SEND, "Send (Ctrl+Enter)");
+    m_sendBtn  = new wxButton(this, ID_CP_SEND,  "Send (Ctrl+Enter)");
+    m_clearBtn = new wxButton(this, ID_CP_CLEAR, "Clear Chat");
 
     m_inputCtrl->Bind(wxEVT_KEY_DOWN, [this](wxKeyEvent& e) {
         if (e.GetKeyCode() == WXK_RETURN && e.ControlDown()) {
@@ -42,8 +47,12 @@ ChatPanel::ChatPanel(wxWindow* parent, bool darkMode)
         }
     });
 
+    auto* btnCol = new wxBoxSizer(wxVERTICAL);
+    btnCol->Add(m_sendBtn,  0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_clearBtn, 0, wxEXPAND);
+
     inputRow->Add(m_inputCtrl, 1, wxEXPAND | wxALL, 6);
-    inputRow->Add(m_sendBtn, 0, wxALIGN_BOTTOM | wxALL, 6);
+    inputRow->Add(btnCol, 0, wxALIGN_BOTTOM | wxALL, 6);
     outer->Add(inputRow, 0, wxEXPAND);
     SetSizer(outer);
 
@@ -54,9 +63,10 @@ ChatPanel::ChatPanel(wxWindow* parent, bool darkMode)
 void ChatPanel::SyncProject(const std::string& projectDir,
                              const LLMConfig&   llmCfg,
                              bool               darkMode) {
-    m_llmCfg   = llmCfg;
-    m_darkMode = darkMode;
+    m_llmCfg       = llmCfg;
+    m_darkMode     = darkMode;
     m_turns.clear();
+    m_savedIndices.clear();
 
     if (projectDir.empty()) {
         m_chatFile.clear();
@@ -64,7 +74,8 @@ void ChatPanel::SyncProject(const std::string& projectDir,
         return;
     }
 
-    m_chatFile = projectDir + "/chat.md";
+    m_projectDir = projectDir;
+    m_chatFile   = projectDir + "/chat.md";
 
     // Create chat.md if it doesn't exist yet.
     if (!fs::exists(m_chatFile)) {
@@ -94,8 +105,16 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
     const std::string aBg = m_darkMode ? "#1c2a1c" : "#f1f8e9";
 
     std::string body;
-    for (const auto& t : m_turns) {
+    for (int i = 0; i < (int)m_turns.size(); ++i) {
+        const auto& t = m_turns[i];
+        bool isSaved = m_savedIndices.count(i) > 0;
+        std::string saveClass = isSaved ? " saved" : "";
+        std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
         body += "<div class='chat-turn'>"
+                "<div class='chat-toolbar'>"
+                "<a class='chat-save-btn" + saveClass + "' href='testtaker://chat-save/"
+                + std::to_string(i) + "'>" + saveLabel + "</a>"
+                "</div>"
                 "<div class='chat-q'>" + EscapeHTML(t.question) + "</div>"
                 "<div class='chat-a'>" + RenderMarkdown(t.answer) + "</div>"
                 "</div>\n";
@@ -117,6 +136,13 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
 
     const std::string extraCSS = R"(<style>
 .chat-turn { margin-bottom:18px; }
+.chat-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; }
+.chat-turn:hover .chat-save-btn { opacity:1; }
+.chat-save-btn { opacity:0; transition:opacity 0.15s;
+  background:none; border:1px solid var(--border); border-radius:4px;
+  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
+  color:var(--text-muted); text-decoration:none; white-space:nowrap; }
+.chat-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
 .chat-q { background:)" + qBg + R"(; border-radius:8px 8px 8px 2px;
   padding:10px 14px; margin-bottom:6px; font-weight:500; }
 .chat-a { background:)" + aBg + R"(; border-radius:2px 8px 8px 8px;
@@ -180,4 +206,48 @@ void ChatPanel::OnSend(wxCommandEvent&) {
             Render();
         });
     }).detach();
+}
+
+// ---------------------------------------------------------------------------
+void ChatPanel::OnClearChat(wxCommandEvent&) {
+    if (m_chatFile.empty()) return;
+    int answer = wxMessageBox("Clear all chat history for this project?",
+                              "Clear Chat", wxYES_NO | wxICON_WARNING);
+    if (answer != wxYES) return;
+
+    // Truncate chat.md to just the header
+    std::ofstream f(m_chatFile, std::ios::trunc);
+    f << "# Chat\n\n<!-- ch:0 -->\n## Conversation\n";
+    m_turns.clear();
+    m_savedIndices.clear();
+    Logger::get().log("Chat history cleared");
+    Render();
+}
+
+// ---------------------------------------------------------------------------
+void ChatPanel::OnWebViewNav(wxWebViewEvent& evt) {
+    wxString url = evt.GetURL();
+
+    if (url.StartsWith("testtaker://chat-save/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(22).ToLong(&idx);  // "testtaker://chat-save/" is 22 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        if (m_savedIndices.count((int)idx)) return;  // already saved
+
+        std::time_t now = std::time(nullptr);
+        char dateBuf[16];
+        std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", std::localtime(&now));
+
+        const auto& t = m_turns[idx];
+        AppendSavedConvo(m_projectDir, t.question, t.answer, dateBuf);
+        m_savedIndices.insert((int)idx);
+        Logger::get().log("Chat turn " + std::to_string(idx) + " saved to saved_convos.md");
+
+        if (m_onSavedConvo) m_onSavedConvo();
+        Render();
+        return;
+    }
+
+    evt.Skip();
 }

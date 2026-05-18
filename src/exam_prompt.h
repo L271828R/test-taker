@@ -55,3 +55,8 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput);
 // Each turn gets a hover-highlight and testtaker://flag/N, note/N, discuss/N links.
 std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
                              const std::vector<int>&          chatCounts);
+
+// Render past-session groups as read-only history above the active session.
+// Each group is (sessionLabel, turns). Includes a clear-history link.
+std::string RenderHistoryGroups(
+    const std::vector<std::pair<std::string, std::vector<QuestionTurn>>>& groups);

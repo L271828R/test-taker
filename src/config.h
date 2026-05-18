@@ -34,6 +34,11 @@ struct AppState {
 
     // Focus-area list serialized as "stars@@text|stars@@text|..."
     std::string focusAreas;
+
+    // Project dir that was active when the New Session form was last saved.
+    // Used to detect whether the project changed on restart (avoids clearing
+    // topic/focus areas when reopening the same project).
+    std::string lastExamProjectDir;
 };
 
 AppState ParseState(const std::string& content);

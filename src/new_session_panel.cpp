@@ -262,6 +262,13 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
 
 // ---------------------------------------------------------------------------
 void NewSessionPanel::SyncProject(const std::string& projectDir) {
+    // On first call after a fresh launch m_activeProjectDir is empty, but the
+    // user may be reopening the same project they had last time.  Seed from
+    // the persisted value so we can detect a true project change.
+    if (m_activeProjectDir.empty()) {
+        AppState saved = LoadAppState();
+        m_activeProjectDir = saved.lastExamProjectDir;
+    }
     bool projectChanged = (projectDir != m_activeProjectDir);
     m_activeProjectDir = projectDir;
 
@@ -328,13 +335,14 @@ std::string NewSessionPanel::GenerateSessionFilename() const {
 // ---------------------------------------------------------------------------
 void NewSessionPanel::SaveFormState() const {
     AppState st = LoadAppState();
-    st.topic        = m_topicCtrl->GetValue().ToStdString();
-    st.instructions = m_instrCtrl->GetValue().ToStdString();
-    st.focusAreas   = SerializeFocusAreas(m_focusListPanel->GetAreas());
-    st.backend      = m_backendChoice->GetString(
+    st.topic              = m_topicCtrl->GetValue().ToStdString();
+    st.instructions       = m_instrCtrl->GetValue().ToStdString();
+    st.focusAreas         = SerializeFocusAreas(m_focusListPanel->GetAreas());
+    st.backend            = m_backendChoice->GetString(
         m_backendChoice->GetSelection()).ToStdString();
-    st.apiKey       = m_apiKeyCtrl->GetValue().ToStdString();
-    st.ollamaModel  = m_ollamaModel->GetValue().ToStdString();
+    st.apiKey             = m_apiKeyCtrl->GetValue().ToStdString();
+    st.ollamaModel        = m_ollamaModel->GetValue().ToStdString();
+    st.lastExamProjectDir = m_activeProjectDir;
     SaveAppState(st);
 }
 

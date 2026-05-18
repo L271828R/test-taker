@@ -74,8 +74,9 @@ AppState ParseState(const std::string& content) {
         else if (key == "checkedChars")   st.checkedChars   = val;
         else if (key == "apiKey")         st.apiKey            = val;
         else if (key == "ollamaModel")    st.ollamaModel       = val;
-        else if (key == "lastSessionFile") st.lastSessionFile  = val;
-        else if (key == "focusAreas")      st.focusAreas       = val;
+        else if (key == "lastSessionFile")    st.lastSessionFile    = val;
+        else if (key == "focusAreas")         st.focusAreas         = val;
+        else if (key == "lastExamProjectDir") st.lastExamProjectDir = val;
     }
     return st;
 }
@@ -107,6 +108,7 @@ void SaveAppState(const AppState& state) {
       << "checkedChars = "     << state.checkedChars     << "\n"
       << "apiKey = "           << state.apiKey           << "\n"
       << "ollamaModel = "      << state.ollamaModel      << "\n"
-      << "lastSessionFile = "  << state.lastSessionFile  << "\n"
-      << "focusAreas = "      << state.focusAreas       << "\n";
+      << "lastSessionFile = "    << state.lastSessionFile    << "\n"
+      << "focusAreas = "         << state.focusAreas         << "\n"
+      << "lastExamProjectDir = " << state.lastExamProjectDir << "\n";
 }

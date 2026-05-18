@@ -10,6 +10,7 @@ struct QuestionTurn {
     Score       score       = Score::Skipped;
     std::string explanation;
     bool        flagged     = false;
+    bool        saved       = false;
     std::string note;
 };
 
@@ -34,6 +35,9 @@ bool SetTurnFlagged(const std::string& filePath, int index, bool flagged);
 // Rewrites the whole :::session block in place.
 // Returns false on I/O error or out-of-range index.
 bool SetTurnNote(const std::string& filePath, int index, const std::string& note);
+
+// Set the saved field on the turn at zero-based index.
+bool SetTurnSaved(const std::string& filePath, int index, bool saved);
 
 Score       ScoreFromString(const std::string& s);
 std::string ScoreToString(Score s);

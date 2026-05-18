@@ -1,12 +1,18 @@
 #include "exam_panel.h"
 #include "html_template.h"
 #include "exam_prompt.h"
+#include "exam_meta.h"
 #include "corpus.h"
 #include "markdown.h"
 #include "logger.h"
+#include "saved_convos.h"
+#include <ctime>
+#include <filesystem>
 #include <sstream>
 #include <thread>
 #include <wx/app.h>
+
+namespace fs = std::filesystem;
 
 enum {
     ID_EXAM_SEND = wxID_HIGHEST + 100,
@@ -25,10 +31,12 @@ wxEND_EVENT_TABLE()
 
 ExamPanel::ExamPanel(wxWindow* parent,
                      SessionCompleteCallback onSessionComplete,
-                     DeepDiveCallback        onDeepDive)
+                     DeepDiveCallback        onDeepDive,
+                     SavedConvoCallback      onSavedConvo)
     : wxPanel(parent),
       m_onComplete(std::move(onSessionComplete)),
-      m_onDeepDive(std::move(onDeepDive))
+      m_onDeepDive(std::move(onDeepDive)),
+      m_onSavedConvo(std::move(onSavedConvo))
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
@@ -75,11 +83,13 @@ ExamPanel::ExamPanel(wxWindow* parent,
     leftSizer->Add(m_statusLabel, 0, wxLEFT | wxBOTTOM, 8);
     m_leftPanel->SetSizer(leftSizer);
 
-    m_chatPanel = new TurnChatPanel(m_splitter, m_darkMode, [this]() {
-        m_chatOpen = false;
-        if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
-        Render();
-    });
+    m_chatPanel = new TurnChatPanel(m_splitter, m_darkMode,
+        [this]() {
+            m_chatOpen = false;
+            if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
+            Render();
+        },
+        [this]() { if (m_onSavedConvo) m_onSavedConvo(); });
 
     // Start unsplit — chat opens when the user clicks Discuss
     m_splitter->Initialize(m_leftPanel);
@@ -116,6 +126,16 @@ void ExamPanel::StartSession(const std::string& projectDir,
                              const ExamConfig&  cfg,
                              const LLMConfig&   llmCfg,
                              bool               darkMode) {
+    // Keep previous session turns in history before starting fresh
+    if (!m_turns.empty()) {
+        std::string label = "Previous session";
+        if (!m_sessionFile.empty()) {
+            auto hdr = LoadSessionHeader(m_sessionFile);
+            if (!hdr.topic.empty()) label = hdr.topic;
+        }
+        m_historyGroups.push_back({label, m_turns});
+    }
+
     m_projectDir      = projectDir;
     m_sessionFile     = sessionFile;
     m_cfg             = cfg;
@@ -155,6 +175,23 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     m_turns           = turns;
     m_questionIndex   = (int)turns.size();
     m_currentQuestion.clear();
+
+    // Load all older completed sessions into history
+    m_historyGroups.clear();
+    auto meta = LoadExamMeta(projectDir);
+    for (const auto& rec : meta.sessions) {
+        // Resolve path the same way review_panel does
+        std::string path = projectDir + "/" + rec.sessionFile;
+        if (!fs::exists(path)) {
+            if (!fs::exists(rec.sessionFile)) continue;
+            path = rec.sessionFile;
+        }
+        if (path == sessionFile) continue;  // skip the session we're resuming
+        auto oldTurns = LoadSession(path);
+        if (oldTurns.empty()) continue;
+        std::string label = rec.topic.empty() ? rec.startedAt.substr(0, 10) : rec.topic;
+        m_historyGroups.push_back({label, oldTurns});
+    }
 
     m_cfg.topic          = hdr.topic;
     m_cfg.instructions   = hdr.instructions;
@@ -426,10 +463,13 @@ void ExamPanel::Render() {
 std::string ExamPanel::BuildExamHTML() const {
     std::ostringstream body;
 
-    if (!m_active && m_turns.empty()) {
+    if (!m_historyGroups.empty())
+        body << RenderHistoryGroups(m_historyGroups);
+
+    if (!m_active && m_turns.empty() && m_historyGroups.empty()) {
         body << "<p style='color:var(--text-muted);margin-top:2em'>"
                 "No active session. Go to <strong>New Session</strong> to start.</p>";
-    } else {
+    } else if (!m_turns.empty() || m_active) {
         // Load chat counts for each completed turn so the discuss button can
         // show a badge when a turn already has follow-up exchanges.
         std::vector<int> chatCounts;
@@ -503,6 +543,7 @@ void ExamPanel::Clear() {
     m_active          = false;
     m_busy            = false;
     m_turns.clear();
+    m_historyGroups.clear();
     m_currentQuestion.clear();
     m_sessionFile.clear();
     m_projectDir.clear();
@@ -615,6 +656,37 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         m_turns[idx].note = note;
         SetTurnNote(m_sessionFile, idx, note);
         Logger::get().log("Turn " + std::to_string(idx) + " note set");
+        Render();
+        return;
+    }
+
+    if (url == "testtaker://clear-history") {
+        evt.Veto();
+        m_historyGroups.clear();
+        Render();
+        return;
+    }
+
+    if (url.StartsWith("testtaker://save/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(17).ToLong(&idx);  // "testtaker://save/" is 17 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        if (m_turns[idx].saved) return;  // already saved — no duplicates
+
+        // ISO date string from current time
+        std::time_t now = std::time(nullptr);
+        char dateBuf[16];
+        std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", std::localtime(&now));
+
+        const auto& t = m_turns[idx];
+        AppendSavedConvo(m_projectDir, t.question, t.explanation, dateBuf);
+
+        m_turns[idx].saved = true;
+        SetTurnSaved(m_sessionFile, idx, true);
+        Logger::get().log("Turn " + std::to_string(idx) + " saved to saved_convos.md");
+
+        if (m_onSavedConvo) m_onSavedConvo();
         Render();
         return;
     }
