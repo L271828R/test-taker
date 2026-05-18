@@ -8,6 +8,10 @@ std::vector<std::string> ChunkText(const std::string& text,
                                     int windowWords  = 350,
                                     int overlapWords = 50);
 
+// Returns true if the chunk has enough alphabetic content to be worth embedding.
+// Rejects chunks that are too short or dominated by digits/symbols (e.g. PDF line numbers).
+bool IsUsefulChunk(const std::string& chunk, float minAlphaRatio = 0.50f, int minWords = 20);
+
 struct EmbedResult {
     bool ok = false;
     std::vector<float> embedding;

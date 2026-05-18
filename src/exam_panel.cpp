@@ -243,7 +243,8 @@ void ExamPanel::RequestFirstQuestion() {
             std::string ragQuery = localCfg.focusAreas.empty()
                                    ? localCfg.topic : localCfg.focusAreas;
             std::string ctx = CorpusContextFor(projectDir, ragQuery,
-                                               llmCfg.ollamaUrl, "Exam");
+                                               llmCfg.ollamaUrl, "Exam",
+                                               CorpusTopK(llmCfg.backend));
             if (!ctx.empty()) localCfg.projectContext = ctx;
         }
         std::string prompt = BuildFirstQuestionPrompt(localCfg);
@@ -293,7 +294,8 @@ void ExamPanel::RequestNextQuestion() {
             std::string ragQuery = localCfg.focusAreas.empty()
                                    ? resumeQuery : localCfg.focusAreas;
             std::string ctx = CorpusContextFor(projectDir, ragQuery,
-                                               llmCfg.ollamaUrl, "Exam");
+                                               llmCfg.ollamaUrl, "Exam",
+                                               CorpusTopK(llmCfg.backend));
             if (!ctx.empty()) localCfg.projectContext = ctx;
         }
         std::string prompt = BuildScoringAndNextPrompt(
@@ -350,7 +352,8 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
             std::string ragQuery = localCfg.focusAreas.empty()
                                    ? currentQuestion : localCfg.focusAreas;
             std::string ctx = CorpusContextFor(projectDir, ragQuery,
-                                               llmCfg.ollamaUrl, "Exam");
+                                               llmCfg.ollamaUrl, "Exam",
+                                               CorpusTopK(llmCfg.backend));
             if (!ctx.empty()) localCfg.projectContext = ctx;
         }
         std::string prompt = BuildScoringAndNextPrompt(

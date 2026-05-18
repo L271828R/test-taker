@@ -30,7 +30,8 @@ std::string CopyFileToCorpusDir(const std::string& projectDir,
 std::string CorpusContextFor(const std::string& projectDir,
                               const std::string& query,
                               const std::string& ollamaUrl,
-                              const std::string& logContext = "");
+                              const std::string& logContext = "",
+                              int                topK       = 3);
 
 class Corpus {
 public:

@@ -198,6 +198,7 @@ void CorpusPanel::ProcessFile(const std::string& filePath) {
         if (!bg.Open(bgErr)) return;
 
         for (int i = 0; i < total && !*cancel; ++i) {
+            if (!IsUsefulChunk(chunks[i])) continue;
             auto emb = EmbedText(chunks[i], ollamaUrl);
             if (emb.ok) bg.AddChunk(docId, i, chunks[i], emb.embedding, bgErr);
 

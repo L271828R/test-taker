@@ -18,6 +18,11 @@ struct LLMResult {
     std::string error;
 };
 
+// Number of corpus chunks to retrieve. Large cloud models handle more context.
+inline int CorpusTopK(LLMBackend b) {
+    return (b == LLMBackend::Ollama || b == LLMBackend::Clipboard) ? 3 : 9;
+}
+
 // Convert between stored labels and backend enum values.
 inline LLMBackend BackendFromLabel(const std::string& label) {
     if (label == "claude -p")      return LLMBackend::ClaudeP;

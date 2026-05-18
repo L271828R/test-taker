@@ -42,6 +42,40 @@ std::vector<std::string> ChunkText(const std::string& text, int windowWords, int
     return chunks;
 }
 
+static bool IsCodeChunk(const std::string& chunk) {
+    // Preprocessor directives are unambiguous code markers
+    if (chunk.find("#include") != std::string::npos ||
+        chunk.find("#define")  != std::string::npos ||
+        chunk.find("#ifndef")  != std::string::npos)
+        return true;
+
+    // High semicolon-to-word ratio indicates code (prose rarely uses semicolons)
+    int semicolons = 0, words = 0;
+    bool inWord = false;
+    for (unsigned char c : chunk) {
+        if (c == ';') ++semicolons;
+        if (std::isspace(c)) { inWord = false; }
+        else if (!inWord)    { ++words; inWord = true; }
+    }
+    return words > 0 && (static_cast<float>(semicolons) / words) > 0.08f;
+}
+
+bool IsUsefulChunk(const std::string& chunk, float minAlphaRatio, int minWords) {
+    int words = 0, alpha = 0, total = 0;
+    bool inWord = false;
+    for (unsigned char c : chunk) {
+        if (std::isspace(c)) { inWord = false; continue; }
+        if (!inWord) { ++words; inWord = true; }
+        ++total;
+        if (std::isalpha(c)) ++alpha;
+    }
+    if (words < minWords) return false;
+    if (total == 0) return false;
+    if (static_cast<float>(alpha) / static_cast<float>(total) < minAlphaRatio) return false;
+    if (IsCodeChunk(chunk)) return false;
+    return true;
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
 static std::string temp_path(const std::string& suffix) {

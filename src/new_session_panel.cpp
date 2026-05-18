@@ -282,6 +282,7 @@ void NewSessionPanel::SyncProject(const std::string& projectDir) {
             // bleed in.  Only restore the backend/credentials which are truly global.
             m_topicCtrl->Clear();
             m_instrCtrl->Clear();
+            m_focusListPanel->SetAreas({});
             AppState st = LoadAppState();
             if (!st.backend.empty()) {
                 int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));

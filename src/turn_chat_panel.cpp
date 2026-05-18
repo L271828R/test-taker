@@ -206,7 +206,8 @@ void TurnChatPanel::OnSend(wxCommandEvent&) {
     std::string       sessionFile = m_sessionFile;
     int               turnIndex   = m_turnIndex;
     LLMConfig         cfg         = m_llmCfg;
-    std::string       corpusCtx   = CorpusContextFor(m_projectDir, question, cfg.ollamaUrl, "TurnChat");
+    std::string       corpusCtx   = CorpusContextFor(m_projectDir, question, cfg.ollamaUrl, "TurnChat",
+                                                       CorpusTopK(cfg.backend));
     std::string       prompt      = BuildTurnChatPrompt(examTurn, history, question, corpusCtx);
 
     std::thread([this, prompt, cfg, sessionFile, turnIndex, question]() {

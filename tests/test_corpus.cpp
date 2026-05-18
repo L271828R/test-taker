@@ -97,6 +97,101 @@ int test_corpus() {
         }
     }
 
+    // ── IsUsefulChunk tests ──────────────────────────────────────────────────
+
+    // Normal prose chunk passes
+    {
+        std::string prose = "Virtual functions allow derived classes to override base class "
+                            "behaviour. The compiler resolves the call at runtime via a vtable.";
+        bool ok = IsUsefulChunk(prose);
+        if (!ok) {
+            std::cerr << "FAIL [chunk-useful-prose]: rejected good prose\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chunk-useful-prose]\n";
+        }
+    }
+
+    // Chunk that is mostly line numbers is rejected
+    {
+        // Simulates a PDF code listing with leading line numbers
+        std::string noisy = "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 "
+                            "21 22 23 24 25 26 27 28 29 30 hello world";
+        bool ok = !IsUsefulChunk(noisy);
+        if (!ok) {
+            std::cerr << "FAIL [chunk-reject-linenumbers]: accepted low-alpha chunk\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chunk-reject-linenumbers]\n";
+        }
+    }
+
+    // Very short chunk (< 20 words) is rejected regardless of alpha ratio
+    {
+        std::string tiny = "Fig. 12.4 Part 1 of 2";
+        bool ok = !IsUsefulChunk(tiny);
+        if (!ok) {
+            std::cerr << "FAIL [chunk-reject-short]: accepted tiny chunk\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chunk-reject-short]\n";
+        }
+    }
+
+    // Prose that mentions code terms but isn't code passes
+    {
+        std::string mixed = "virtual double earnings const override the earnings function "
+                            "returns baseSalary plus commissionRate multiplied by grossSales "
+                            "which gives the total compensation for this employee type";
+        bool ok = IsUsefulChunk(mixed);
+        if (!ok) {
+            std::cerr << "FAIL [chunk-useful-mixed]: rejected good mixed chunk\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chunk-useful-mixed]\n";
+        }
+    }
+
+    // C++ header with #include is rejected as code
+    {
+        std::string code = "#ifndef BASEPLUS_H #define BASEPLUS_H #include <string> "
+                           "class BasePlusCommissionEmployee { public: "
+                           "void setFirstName(const std::string&); "
+                           "std::string getFirstName() const; "
+                           "void setBaseSalary(double); double getBaseSalary() const; "
+                           "double earnings() const; private: std::string firstName; "
+                           "double grossSales; double commissionRate; double baseSalary; }; #endif";
+        bool ok = !IsUsefulChunk(code);
+        if (!ok) {
+            std::cerr << "FAIL [chunk-reject-cpp-header]: accepted C++ header as useful\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chunk-reject-cpp-header]\n";
+        }
+    }
+
+    // C++ implementation file with high semicolon density is rejected
+    {
+        std::string code = "BasePlusCommissionEmployee::BasePlusCommissionEmployee("
+                           "const string& first, const string& last, const string& ssn, "
+                           "double sales, double rate, double salary) { "
+                           "firstName = first; lastName = last; socialSecurityNumber = ssn; "
+                           "setGrossSales(sales); setCommissionRate(rate); setBaseSalary(salary); } "
+                           "void BasePlusCommissionEmployee::setFirstName(const string& first) { "
+                           "firstName = first; } "
+                           "string BasePlusCommissionEmployee::getFirstName() const { return firstName; } "
+                           "void BasePlusCommissionEmployee::setLastName(const string& last) { "
+                           "lastName = last; } "
+                           "string BasePlusCommissionEmployee::getLastName() const { return lastName; }";
+        bool ok = !IsUsefulChunk(code);
+        if (!ok) {
+            std::cerr << "FAIL [chunk-reject-cpp-impl]: accepted C++ implementation as useful\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chunk-reject-cpp-impl]\n";
+        }
+    }
+
     // ── Corpus CRUD tests ────────────────────────────────────────────────────
 
     // Open creates schema (tables documents + chunks must exist)
@@ -265,6 +360,39 @@ int test_corpus() {
             std::cout << "PASS [corpus-topk]\n";
         }
         fs::remove_all(dir);
+    }
+
+    // Search respects topK=9
+    {
+        auto dir = fs::temp_directory_path() / "tt_corpus_topk9";
+        fs::create_directories(dir);
+        std::string err;
+        Corpus c((dir / "corpus.db").string());
+        c.Open(err);
+
+        int docId = c.AddDocument("topk9.txt", "/topk9.txt", err);
+        std::vector<float> v = {1.0f};
+        for (int i = 0; i < 12; ++i)
+            c.AddChunk(docId, i, "chunk " + std::to_string(i), v, err);
+
+        auto results = c.Search(v, 9);
+        if (results.size() != 9) {
+            std::cerr << "FAIL [corpus-topk9]: expected 9, got " << results.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [corpus-topk9]\n";
+        }
+        fs::remove_all(dir);
+    }
+
+    // CorpusContextFor accepts topK parameter
+    {
+        // Compile-time check: the function must accept a 5th int argument.
+        // We pass a non-existent dir so it returns empty (no Ollama needed).
+        std::string result = CorpusContextFor("/nonexistent/path", "query",
+                                              "http://localhost:11434", "Test", 9);
+        // Result is empty (no corpus), but the call must compile with topK=9.
+        std::cout << "PASS [corpus-context-topk-param]\n";
     }
 
     // CorpusContextFor returns empty string when no corpus.db exists

@@ -129,15 +129,15 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
     m_chatPage->SyncProject(projectDir, llmCfg, m_darkMode);
     m_corpusPage->SyncProject(projectDir, llmCfg.ollamaUrl);
 
-    // Resume last session for this project, or clear stale state from a previous project.
-    if (!m_examPage->HasActiveSession()) {
+    // Always reset the exam panel when switching projects. Any in-progress turns
+    // are already persisted via AppendSessionTurn, so no data is lost.
+    {
         bool resumed = false;
         if (!state.lastSessionFile.empty()) {
             std::string sessionPath = projectDir + "/" + state.lastSessionFile;
             std::ifstream check(sessionPath);
             if (check.good()) {
                 m_examPage->ResumeSession(projectDir, sessionPath, llmCfg, m_darkMode);
-                m_notebook->SetSelection(TAB_EXAM);
                 Logger::get().log("Auto-resumed session: " + sessionPath);
                 resumed = true;
             }

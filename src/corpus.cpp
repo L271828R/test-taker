@@ -12,7 +12,8 @@ namespace fs = std::filesystem;
 std::string CorpusContextFor(const std::string& projectDir,
                               const std::string& query,
                               const std::string& ollamaUrl,
-                              const std::string& logContext) {
+                              const std::string& logContext,
+                              int                topK) {
     std::string dbPath = projectDir + "/corpus.db";
     if (!fs::exists(dbPath)) return {};
 
@@ -23,7 +24,7 @@ std::string CorpusContextFor(const std::string& projectDir,
     auto emb = EmbedText(query, ollamaUrl);
     if (!emb.ok) return {};
 
-    auto hits = corpus.Search(emb.embedding, 3);
+    auto hits = corpus.Search(emb.embedding, topK);
     if (hits.empty()) return {};
 
     // Build context string and log to RAG log.

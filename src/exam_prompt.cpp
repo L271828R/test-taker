@@ -231,7 +231,11 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
              background:var(--surface); border-left:3px solid var(--link);
              font-size:0.9em; color:var(--text-muted); white-space:pre-wrap; }
 .question { font-weight:600; margin-bottom:.4em; }
-.answer { color:var(--text-muted); margin-bottom:.3em; font-style:italic; }
+.answer { color:var(--text-muted); margin-bottom:.3em; font-size:.95em; }
+.answer-label { font-style:italic; font-weight:600; }
+.answer-body { margin-top:.25em; font-style:normal; color:var(--text); }
+.answer-body p:first-child { margin-top:0; }
+.answer-body p:last-child  { margin-bottom:0; }
 .verdict { display:inline-block; padding:.15em .6em; border-radius:4px;
            font-size:.85em; font-weight:600; margin-bottom:.4em; }
 .verdict.correct { background:#1a7f37; color:#fff; }
@@ -268,9 +272,11 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
             << i << "'>" << flagLabel << "</a>"
             << "</div>"
             << "<div class='question'>" << RenderMarkdown(t.question) << "</div>"
-            << "<div class='answer'><strong>Your answer:</strong> "
-            << EscapeHTML(t.userAnswer.empty() ? "(skipped)" : t.userAnswer)
-            << "</div>"
+            << "<div class='answer'>"
+            << "<span class='answer-label'>Your answer:</span>"
+            << "<div class='answer-body'>"
+            << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
+            << "</div></div>"
             << "<div class='verdict " << scoreClass << "'>"
             << ScoreLabel(t.score) << "</div>"
             << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>";

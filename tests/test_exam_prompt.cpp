@@ -431,5 +431,51 @@ int test_exam_prompt() {
         }
     }
 
+    // RenderExamTurns: user answer with code fence is rendered as <pre>/<code>
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question   = "Show a pure virtual function.";
+        t0.userAnswer = "Like this:\n```cpp\nclass Monster { virtual void roar() = 0; };\n```";
+        t0.score      = Score::Partial;
+        t0.flagged    = false;
+        turns.push_back(t0);
+
+        std::string html = RenderExamTurns(turns, {0});
+        bool hasCode = html.find("<code") != std::string::npos
+                    || html.find("<pre")  != std::string::npos;
+        if (!hasCode) {
+            std::cerr << "FAIL [render-answer-code-fence]: code fence not rendered\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-answer-code-fence]\n";
+        }
+    }
+
+    // RenderExamTurns: newlines in user answer produce separate paragraphs/breaks
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question   = "Q";
+        t0.userAnswer = "AlphaLine\n\nBetaLine";
+        t0.score      = Score::Correct;
+        t0.flagged    = false;
+        turns.push_back(t0);
+
+        std::string html = RenderExamTurns(turns, {0});
+        // Both lines must appear and be separated by markup (not run together)
+        auto posAlpha = html.find("AlphaLine");
+        auto posBeta  = html.find("BetaLine");
+        bool separated = posAlpha != std::string::npos
+                      && posBeta  != std::string::npos
+                      && html.substr(posAlpha, posBeta - posAlpha).find('<') != std::string::npos;
+        if (!separated) {
+            std::cerr << "FAIL [render-answer-newlines]: lines not separated by markup\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-answer-newlines]\n";
+        }
+    }
+
     return failures;
 }

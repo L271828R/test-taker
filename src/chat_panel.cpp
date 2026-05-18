@@ -151,7 +151,8 @@ void ChatPanel::OnSend(wxCommandEvent&) {
     }
 
     // Prepend relevant corpus excerpts when available.
-    std::string corpusCtx = CorpusContextFor(projectDir, question, m_llmCfg.ollamaUrl, "Chat");
+    std::string corpusCtx = CorpusContextFor(projectDir, question, m_llmCfg.ollamaUrl, "Chat",
+                                              CorpusTopK(m_llmCfg.backend));
     if (!corpusCtx.empty()) {
         contextMd = corpusCtx + (contextMd.empty() ? "" : "\n\n" + contextMd);
     }
