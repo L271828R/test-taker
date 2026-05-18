@@ -7,6 +7,7 @@
 #include "turn_chat.h"
 #include "session.h"
 #include "llm.h"
+#include "corpus.h"
 
 class TurnChatPanel : public wxPanel {
 public:
@@ -28,6 +29,7 @@ private:
     std::function<void()> m_onClose;
     int                   m_turnIndex  = -1;
     std::string           m_sessionFile;
+    std::string           m_projectDir;
     LLMConfig             m_llmCfg;
     QuestionTurn          m_examTurn;
     bool                  m_busy       = false;

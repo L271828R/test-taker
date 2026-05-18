@@ -5,16 +5,12 @@
 #include "chat_panel.h"
 #include "corpus_panel.h"
 #include "corpus.h"
-#include "embeddings.h"
 #include "exam_meta.h"
 #include "config.h"
 #include "logger.h"
 #include "html_template.h"
 #include <wx/config.h>
-#include <filesystem>
 #include <fstream>
-
-namespace fs = std::filesystem;
 
 // Notebook tab indices
 enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS };
@@ -22,7 +18,8 @@ enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHA
 wxBEGIN_EVENT_TABLE(AppFrame, wxFrame)
     EVT_MENU(ID_THEME_LIGHT,  AppFrame::OnThemeLight)
     EVT_MENU(ID_THEME_DARK,   AppFrame::OnThemeDark)
-    EVT_MENU(ID_VIEW_LOGS,    AppFrame::OnViewLogs)
+    EVT_MENU(ID_VIEW_LOGS,     AppFrame::OnViewLogs)
+    EVT_MENU(ID_VIEW_RAG_LOGS, AppFrame::OnViewRagLogs)
     EVT_MENU(ID_FONT_INCREASE, AppFrame::OnFontIncrease)
     EVT_MENU(ID_FONT_DECREASE, AppFrame::OnFontDecrease)
     EVT_MENU(ID_FONT_RESET,    AppFrame::OnFontReset)
@@ -53,7 +50,8 @@ AppFrame::AppFrame()
     menuView->Append(ID_FONT_DECREASE, "Decrease Font\tCtrl+-");
     menuView->Append(ID_FONT_RESET,    "Reset Font\tCtrl+0");
     menuView->AppendSeparator();
-    menuView->Append(ID_VIEW_LOGS, "View Logs");
+    menuView->Append(ID_VIEW_LOGS,     "View Logs");
+    menuView->Append(ID_VIEW_RAG_LOGS, "View RAG Logs");
 
     auto* menuBar = new wxMenuBar;
     menuBar->Append(menuFile, "&File");
@@ -157,27 +155,13 @@ void AppFrame::OnSessionStarted(const std::string& projectDir,
 
     // Augment projectContext with corpus excerpts when the user opted in.
     ExamConfig augCfg = cfg;
-    std::string dbPath = projectDir + "/corpus.db";
-    if (cfg.useCorpus && fs::exists(dbPath)) {
-        Corpus corpus(dbPath);
-        std::string err;
-        if (corpus.Open(err)) {
-            auto emb = EmbedText(cfg.topic, llmCfg.ollamaUrl);
-            if (emb.ok) {
-                auto hits = corpus.Search(emb.embedding, 5);
-                if (!hits.empty()) {
-                    std::string ctx;
-                    if (!augCfg.projectContext.empty())
-                        ctx = augCfg.projectContext + "\n\n";
-                    ctx += "Relevant excerpts from the study corpus:\n\n";
-                    for (const auto& h : hits)
-                        ctx += h.text + "\n\n---\n\n";
-                    augCfg.projectContext = ctx;
-                    Logger::get().log("Corpus: injected " + std::to_string(hits.size())
-                                      + " chunks into exam context"
-                                      + "  first='" + hits[0].text.substr(0, 80) + "…'");
-                }
-            }
+    if (cfg.useCorpus) {
+        std::string corpusCtx = CorpusContextFor(projectDir, cfg.topic,
+                                                  llmCfg.ollamaUrl, "Exam");
+        if (!corpusCtx.empty()) {
+            augCfg.projectContext = corpusCtx
+                + (augCfg.projectContext.empty() ? "" : "\n\n" + augCfg.projectContext);
+            Logger::get().log("Corpus: injected chunks into exam context for topic='" + cfg.topic + "'");
         }
     }
 
@@ -250,6 +234,20 @@ void AppFrame::OnViewLogs(wxCommandEvent&) {
 
     // Open a simple viewer window
     auto* win = new wxFrame(this, wxID_ANY, "Logs", wxDefaultPosition, wxSize(900, 600));
+    auto* wv  = wxWebView::New(win, wxID_ANY, "about:blank");
+    wv->SetPage(wxString::FromUTF8(html), "");
+    win->Show();
+}
+
+void AppFrame::OnViewRagLogs(wxCommandEvent&) {
+    std::string logPath = std::string(getenv("HOME") ? getenv("HOME") : "")
+                        + "/Library/Logs/TestTaker/rag.log";
+    std::ifstream f(logPath);
+    std::string raw;
+    if (f) raw.assign(std::istreambuf_iterator<char>(f), {});
+    std::string html = BuildRagLogsHTML(raw, logPath, m_darkMode);
+
+    auto* win = new wxFrame(this, wxID_ANY, "RAG Logs", wxDefaultPosition, wxSize(960, 700));
     auto* wv  = wxWebView::New(win, wxID_ANY, "about:blank");
     wv->SetPage(wxString::FromUTF8(html), "");
     win->Show();

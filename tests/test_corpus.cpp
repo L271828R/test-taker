@@ -267,6 +267,24 @@ int test_corpus() {
         fs::remove_all(dir);
     }
 
+    // CorpusContextFor returns empty string when no corpus.db exists
+    {
+        auto dir = fs::temp_directory_path() / "tt_ctx_nodb";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+
+        std::string result = CorpusContextFor(dir.string(), "any query",
+                                              "http://localhost:11434");
+        if (!result.empty()) {
+            std::cerr << "FAIL [corpus-context-no-db]: expected empty, got '"
+                      << result.substr(0, 40) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [corpus-context-no-db]\n";
+        }
+        fs::remove_all(dir);
+    }
+
     // CopyFileToCorpusDir copies file into <projectDir>/corpus/<filename>
     {
         auto projDir = fs::temp_directory_path() / "tt_copy_test";

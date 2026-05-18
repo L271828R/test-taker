@@ -25,6 +25,8 @@ bool AppendTurnChatTurn(const std::string& filePath, int turnIndex,
                         const TurnChatTurn& turn);
 
 // Build the LLM prompt for a follow-up chat on a completed exam turn.
+// corpusContext is prepended when non-empty (RAG excerpts from the project corpus).
 std::string BuildTurnChatPrompt(const QuestionTurn& examTurn,
                                 const std::vector<TurnChatTurn>& history,
-                                const std::string& question);
+                                const std::string& question,
+                                const std::string& corpusContext = "");

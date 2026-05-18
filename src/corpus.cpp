@@ -1,4 +1,6 @@
 #include "corpus.h"
+#include "embeddings.h"
+#include "rag_logger.h"
 #include <sqlite3.h>
 #include <algorithm>
 #include <cstring>
@@ -6,6 +8,34 @@
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+std::string CorpusContextFor(const std::string& projectDir,
+                              const std::string& query,
+                              const std::string& ollamaUrl,
+                              const std::string& logContext) {
+    std::string dbPath = projectDir + "/corpus.db";
+    if (!fs::exists(dbPath)) return {};
+
+    Corpus corpus(dbPath);
+    std::string err;
+    if (!corpus.Open(err)) return {};
+
+    auto emb = EmbedText(query, ollamaUrl);
+    if (!emb.ok) return {};
+
+    auto hits = corpus.Search(emb.embedding, 3);
+    if (hits.empty()) return {};
+
+    // Build context string and log to RAG log.
+    std::string ctx = "Relevant excerpts from the study corpus:\n\n";
+    std::vector<RagChunk> ragChunks;
+    for (const auto& h : hits) {
+        ctx += h.text + "\n\n---\n\n";
+        ragChunks.push_back({h.score, h.docName, h.text});
+    }
+    RagLogger::get().logEvent(logContext.empty() ? "Unknown" : logContext, query, ragChunks);
+    return ctx;
+}
 
 std::string CopyFileToCorpusDir(const std::string& projectDir,
                                  const std::string& srcPath,

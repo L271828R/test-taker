@@ -104,8 +104,12 @@ bool AppendTurnChatTurn(const std::string& filePath, int turnIndex,
 // ---------------------------------------------------------------------------
 std::string BuildTurnChatPrompt(const QuestionTurn& examTurn,
                                 const std::vector<TurnChatTurn>& history,
-                                const std::string& question) {
+                                const std::string& question,
+                                const std::string& corpusContext) {
     std::ostringstream out;
+
+    if (!corpusContext.empty())
+        out << "## Study corpus context\n\n" << corpusContext << "\n";
 
     out << "## Exam context\n\n"
         << "The student just completed this exam question:\n\n"

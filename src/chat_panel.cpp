@@ -1,5 +1,6 @@
 #include "chat_panel.h"
 #include "conversation.h"
+#include "corpus.h"
 #include "html_template.h"
 #include "markdown.h"
 #include "meta.h"
@@ -140,12 +141,19 @@ void ChatPanel::OnSend(wxCommandEvent&) {
     m_sendBtn->Enable(false);
     Render(question);
 
+    std::string projectDir = fs::path(m_chatFile).parent_path().string();
+
     // Load context.md if present — injected into prompt as background material.
     std::string contextMd;
     {
-        std::string ctxPath = fs::path(m_chatFile).parent_path().string() + "/context.md";
-        std::ifstream f(ctxPath);
+        std::ifstream f(projectDir + "/context.md");
         if (f) contextMd.assign(std::istreambuf_iterator<char>(f), {});
+    }
+
+    // Prepend relevant corpus excerpts when available.
+    std::string corpusCtx = CorpusContextFor(projectDir, question, m_llmCfg.ollamaUrl, "Chat");
+    if (!corpusCtx.empty()) {
+        contextMd = corpusCtx + (contextMd.empty() ? "" : "\n\n" + contextMd);
     }
 
     std::vector<ConversationTurn> history = m_turns;

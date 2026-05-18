@@ -23,6 +23,15 @@ std::string CopyFileToCorpusDir(const std::string& projectDir,
                                  const std::string& srcPath,
                                  std::string& err);
 
+// Embeds query, searches <projectDir>/corpus.db for top-3 chunks, and returns a
+// formatted excerpt string ready to prepend to an LLM prompt.
+// logContext labels the retrieval event in the RAG log (e.g. "Chat", "TurnChat", "Exam").
+// Returns empty if there is no corpus, Ollama is unavailable, or no results.
+std::string CorpusContextFor(const std::string& projectDir,
+                              const std::string& query,
+                              const std::string& ollamaUrl,
+                              const std::string& logContext = "");
+
 class Corpus {
 public:
     explicit Corpus(const std::string& dbPath);

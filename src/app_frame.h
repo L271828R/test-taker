@@ -18,6 +18,7 @@ enum {
     ID_THEME_LIGHT  = wxID_HIGHEST + 1,
     ID_THEME_DARK,
     ID_VIEW_LOGS,
+    ID_VIEW_RAG_LOGS,
     ID_FONT_INCREASE,
     ID_FONT_DECREASE,
     ID_FONT_RESET,
@@ -55,6 +56,7 @@ private:
     void OnThemeLight(wxCommandEvent&);
     void OnThemeDark(wxCommandEvent&);
     void OnViewLogs(wxCommandEvent&);
+    void OnViewRagLogs(wxCommandEvent&);
     void OnFontIncrease(wxCommandEvent&);
     void OnFontDecrease(wxCommandEvent&);
     void OnFontReset(wxCommandEvent&);

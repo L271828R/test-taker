@@ -2,9 +2,12 @@
 #include "markdown.h"
 #include "html_template.h"
 #include "logger.h"
+#include <filesystem>
 #include <sstream>
 #include <thread>
 #include <wx/app.h>
+
+namespace fs = std::filesystem;
 
 enum { ID_TC_SEND = wxID_HIGHEST + 200, ID_TC_CLOSE };
 
@@ -67,6 +70,7 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
     m_examTurn    = turn;
     m_turnIndex   = turnIndex;
     m_sessionFile = sessionFile;
+    m_projectDir  = fs::path(sessionFile).parent_path().string();
     m_llmCfg      = llmCfg;
     m_busy        = false;
     m_turns       = LoadTurnChat(sessionFile, turnIndex);
@@ -186,7 +190,8 @@ void TurnChatPanel::OnSend(wxCommandEvent&) {
     std::string       sessionFile = m_sessionFile;
     int               turnIndex   = m_turnIndex;
     LLMConfig         cfg         = m_llmCfg;
-    std::string       prompt      = BuildTurnChatPrompt(examTurn, history, question);
+    std::string       corpusCtx   = CorpusContextFor(m_projectDir, question, cfg.ollamaUrl, "TurnChat");
+    std::string       prompt      = BuildTurnChatPrompt(examTurn, history, question, corpusCtx);
 
     std::thread([this, prompt, cfg, sessionFile, turnIndex, question]() {
         LLMResult res = InvokeLLM(prompt, cfg);

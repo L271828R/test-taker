@@ -150,6 +150,45 @@ int test_html_template() {
         }
     }
 
+    // BuildRagLogsHTML: empty log returns a valid HTML page with "RAG" in the title.
+    {
+        std::string html = BuildRagLogsHTML("", "/tmp/rag.log", false);
+        bool hasDoctype = html.find("<!DOCTYPE html>") != std::string::npos;
+        bool hasRag     = html.find("RAG")             != std::string::npos;
+        if (!hasDoctype || !hasRag) {
+            std::cerr << "FAIL [rag-logs-html-empty]: doctype=" << hasDoctype
+                      << " rag=" << hasRag << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [rag-logs-html-empty]\n";
+        }
+    }
+
+    // BuildRagLogsHTML: event block surfaces query, chunk text, score, and doc name.
+    {
+        std::string raw =
+            "RAG_EVENT\n"
+            "time=2026-05-17 21:58:39\n"
+            "context=Chat\n"
+            "query=explain test control\n"
+            "CHUNK score=0.847 doc=qa_guide.pdf\n"
+            "test control is taking corrective action\n"
+            "END_EVENT\n";
+        std::string html = BuildRagLogsHTML(raw, "/tmp/rag.log", false);
+        bool hasQuery = html.find("explain test control")              != std::string::npos;
+        bool hasChunk = html.find("test control is taking corrective") != std::string::npos;
+        bool hasScore = html.find("0.847")                             != std::string::npos;
+        bool hasDoc   = html.find("qa_guide.pdf")                      != std::string::npos;
+        if (!hasQuery || !hasChunk || !hasScore || !hasDoc) {
+            std::cerr << "FAIL [rag-logs-html-event]: query=" << hasQuery
+                      << " chunk=" << hasChunk << " score=" << hasScore
+                      << " doc=" << hasDoc << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [rag-logs-html-event]\n";
+        }
+    }
+
     // Long CJK/no-space text should wrap inside the document column.
     {
         std::string html = BuildHTML("<p>很长很长很长很长很长很长很长很长很长很长</p>", "wrap", false, 100);

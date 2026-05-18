@@ -128,6 +128,7 @@ set(SOURCES
     src/corpus.cpp
     src/embeddings.cpp
     src/corpus_panel.cpp
+    src/rag_logger.cpp
 )
 add_executable(test-taker ${SOURCES})
 add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
@@ -176,6 +177,7 @@ add_executable(test_test-taker
     src/turn_chat.cpp
     src/corpus.cpp
     src/embeddings.cpp
+    src/rag_logger.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})

@@ -1,6 +1,8 @@
 #include "html_template.h"
 #include "markdown.h"
 #include <sstream>
+#include <vector>
+#include <iomanip>
 #include "mermaid_js.h"
 #include "hljs_js.h"
 #include "hljs_css_light.h"
@@ -607,5 +609,147 @@ tr:hover{background:)HTML" + surface + R"HTML(}
 <p style="font-size:12px;color:)HTML" + muted + R"HTML(;margin:8px 0 16px">)HTML"
 + EscapeHTML(logPath) + R"HTML(</p>
 <table>)HTML" + rows + R"HTML(</table>
+</body></html>)HTML";
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildRagLogsHTML(const std::string& rawLog,
+                              const std::string& logPath,
+                              bool darkMode) {
+    const std::string bg      = darkMode ? "#0d1117" : "#ffffff";
+    const std::string surface = darkMode ? "#161b22" : "#f6f8fa";
+    const std::string border  = darkMode ? "#30363d" : "#d0d7de";
+    const std::string text    = darkMode ? "#e6edf3" : "#24292f";
+    const std::string muted   = darkMode ? "#8b949e" : "#57606a";
+    const std::string accent  = darkMode ? "#388bfd" : "#0969da";
+    const std::string green   = darkMode ? "#3fb950" : "#1a7f37";
+    const std::string amber   = darkMode ? "#d29922" : "#9a6700";
+
+    // Parse events from the structured log.
+    struct Chunk { std::string score, doc, text; };
+    struct Event {
+        std::string time, context, query;
+        std::vector<Chunk> chunks;
+    };
+
+    std::vector<Event> events;
+    {
+        std::istringstream ss(rawLog);
+        std::string line;
+        Event cur;
+        bool inEvent = false;
+        Chunk curChunk;
+        bool inChunk = false;
+
+        while (std::getline(ss, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+
+            if (line == "RAG_EVENT") {
+                inEvent = true; cur = {}; inChunk = false;
+            } else if (line == "END_EVENT") {
+                if (inChunk && !curChunk.doc.empty()) cur.chunks.push_back(curChunk);
+                events.push_back(cur);
+                inEvent = false; inChunk = false;
+            } else if (!inEvent) {
+                // skip lines outside events
+            } else if (line.rfind("time=", 0) == 0) {
+                cur.time = line.substr(5);
+            } else if (line.rfind("context=", 0) == 0) {
+                cur.context = line.substr(8);
+            } else if (line.rfind("query=", 0) == 0) {
+                cur.query = line.substr(6);
+            } else if (line.rfind("CHUNK score=", 0) == 0) {
+                if (inChunk && !curChunk.doc.empty()) cur.chunks.push_back(curChunk);
+                curChunk = {};
+                // parse "CHUNK score=0.847 doc=qa_guide.pdf"
+                std::string rest = line.substr(12);
+                auto docPos = rest.find(" doc=");
+                if (docPos != std::string::npos) {
+                    curChunk.score = rest.substr(0, docPos);
+                    curChunk.doc   = rest.substr(docPos + 5);
+                }
+                inChunk = true;
+            } else if (inChunk) {
+                if (!curChunk.text.empty()) curChunk.text += "\n";
+                curChunk.text += line;
+            }
+        }
+    }
+
+    // Render events newest-first.
+    std::string cards;
+    for (int i = static_cast<int>(events.size()) - 1; i >= 0; --i) {
+        const auto& ev = events[static_cast<size_t>(i)];
+
+        std::string chunkRows;
+        for (size_t j = 0; j < ev.chunks.size(); ++j) {
+            const auto& ch = ev.chunks[j];
+            // Score badge colour: green ≥0.7, amber ≥0.4, muted below.
+            float s = 0.0f;
+            try { s = std::stof(ch.score); } catch (...) {}
+            std::string badgeColor = s >= 0.7f ? green : (s >= 0.4f ? amber : muted);
+
+            chunkRows +=
+                "<div class='chunk'>"
+                "<div class='chunk-hdr'>"
+                "<span class='score-badge' style='background:" + badgeColor + "'>"
+                + EscapeHTML(ch.score) + "</span>"
+                "<span class='doc-name'>" + EscapeHTML(ch.doc) + "</span>"
+                "<span class='chunk-num'>chunk " + std::to_string(j + 1)
+                + " of " + std::to_string(ev.chunks.size()) + "</span>"
+                "</div>"
+                "<div class='chunk-text'>" + EscapeHTML(ch.text) + "</div>"
+                "</div>\n";
+        }
+        if (chunkRows.empty())
+            chunkRows = "<p class='no-chunks'>No chunks retrieved (Ollama unavailable or empty corpus).</p>";
+
+        cards +=
+            "<div class='event-card'>"
+            "<div class='event-hdr'>"
+            "<span class='ctx-badge'>" + EscapeHTML(ev.context) + "</span>"
+            "<span class='event-time'>" + EscapeHTML(ev.time) + "</span>"
+            "</div>"
+            "<div class='query-box'>&#x1F50D;&nbsp;" + EscapeHTML(ev.query) + "</div>"
+            + chunkRows +
+            "</div>\n";
+    }
+
+    if (cards.empty())
+        cards = "<p class='empty'>No RAG events logged yet. "
+                "Upload documents to the Corpus tab and start a session with &ldquo;Use corpus&rdquo; enabled.</p>";
+
+    return R"HTML(<!DOCTYPE html><html><head>
+<meta charset="UTF-8">
+<title>TestTaker — RAG Logs</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;
+     background:)HTML" + bg + R"HTML(;color:)HTML" + text + R"HTML(;padding:24px;max-width:960px;margin:0 auto}
+h2{font-size:16px;font-weight:600;margin-bottom:4px}
+.path{font-size:12px;color:)HTML" + muted + R"HTML(;margin-bottom:20px;font-family:monospace}
+.event-card{border:1px solid )HTML" + border + R"HTML(;border-radius:8px;margin-bottom:20px;overflow:hidden}
+.event-hdr{background:)HTML" + surface + R"HTML(;padding:8px 12px;display:flex;align-items:center;gap:10px;
+            border-bottom:1px solid )HTML" + border + R"HTML(}
+.ctx-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:12px;
+           background:)HTML" + accent + R"HTML(;color:#fff}
+.event-time{font-size:12px;color:)HTML" + muted + R"HTML(;font-family:monospace}
+.query-box{padding:10px 14px;font-weight:500;border-bottom:1px solid )HTML" + border + R"HTML(;
+           background:)HTML" + bg + R"HTML(}
+.chunk{padding:12px 14px;border-bottom:1px solid )HTML" + border + R"HTML(}
+.chunk:last-child{border-bottom:none}
+.chunk-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.score-badge{font-size:11px;font-weight:700;padding:2px 7px;border-radius:10px;color:#fff;font-family:monospace}
+.doc-name{font-size:12px;font-weight:600;color:)HTML" + accent + R"HTML(}
+.chunk-num{font-size:11px;color:)HTML" + muted + R"HTML(;margin-left:auto}
+.chunk-text{font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;
+            background:)HTML" + surface + R"HTML(;border-radius:6px;padding:10px 12px;
+            border-left:3px solid )HTML" + border + R"HTML(}
+.no-chunks{padding:10px 14px;color:)HTML" + muted + R"HTML(;font-style:italic}
+.empty{color:)HTML" + muted + R"HTML(;font-style:italic;margin-top:40px;text-align:center}
+</style></head><body>
+<h2>TestTaker — RAG Retrieval Log</h2>
+<p class='path'>)HTML" + EscapeHTML(logPath) + R"HTML(</p>
+)HTML" + cards + R"HTML(
 </body></html>)HTML";
 }

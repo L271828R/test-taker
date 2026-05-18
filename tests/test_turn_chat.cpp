@@ -178,5 +178,43 @@ int test_turn_chat() {
         }
     }
 
+    // BuildTurnChatPrompt injects corpus context when provided
+    {
+        QuestionTurn qt;
+        qt.question   = "What is test control?";
+        qt.userAnswer = "I don't know";
+        qt.score      = Score::Missed;
+        qt.explanation = "Test control is taking corrective actions based on monitoring.";
+
+        std::string corpus = "Excerpt: test control involves adjusting the plan when deviations occur.";
+        std::string prompt = BuildTurnChatPrompt(qt, {}, "explain in more detail", corpus);
+
+        bool hasCorpus = prompt.find(corpus) != std::string::npos;
+        if (!hasCorpus) {
+            std::cerr << "FAIL [turn-chat-corpus-context]: corpus excerpt not in prompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-corpus-context]\n";
+        }
+    }
+
+    // BuildTurnChatPrompt without corpus context works as before
+    {
+        QuestionTurn qt;
+        qt.question    = "What is X?";
+        qt.userAnswer  = "Y";
+        qt.score       = Score::Correct;
+        qt.explanation = "Correct.";
+
+        std::string prompt = BuildTurnChatPrompt(qt, {}, "tell me more");
+        bool hasQ = prompt.find("What is X?") != std::string::npos;
+        if (!hasQ) {
+            std::cerr << "FAIL [turn-chat-no-corpus]: question not in prompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-no-corpus]\n";
+        }
+    }
+
     return failures;
 }
