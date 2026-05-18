@@ -1,4 +1,5 @@
 #include "project.h"
+#include "personality_lib.h"
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -244,6 +245,54 @@ int test_project() {
             std::cout << "PASS [create-project-stub]\n";
         }
         fs::remove_all(base);
+    }
+
+    // ProjectConfig personalities field roundtrips through SaveConfig/LoadConfig.
+    {
+        auto base = make_temp_dir();
+        CreateProject(base.string(), "pers-test");
+        std::string proj = (base / "pers-test").string();
+
+        ProjectConfig cfg;
+        cfg.name         = "pers-test";
+        cfg.personalities = "Albert Einstein|Bill Gates|Linus Torvalds";
+        bool saved = SaveConfig(proj, cfg);
+
+        ProjectConfig loaded = LoadConfig(proj);
+        bool ok = saved && loaded.personalities == "Albert Einstein|Bill Gates|Linus Torvalds";
+        if (!ok) {
+            std::cerr << "FAIL [project-config-personalities]: saved=" << saved
+                      << " personalities='" << loaded.personalities << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-config-personalities]\n";
+        }
+        fs::remove_all(base);
+    }
+
+    // DefaultPersonalityLibrary has the expected four categories with characters.
+    {
+        auto lib = DefaultPersonalityLibrary();
+        bool hasProg   = lib.count("Programming") && lib.at("Programming").size() >= 4;
+        bool hasSci    = lib.count("Science")     && lib.at("Science").size()     >= 4;
+        bool hasLit    = lib.count("Literature")  && lib.at("Literature").size()  >= 3;
+        bool hasPhil   = lib.count("Philosophy")  && lib.at("Philosophy").size()  >= 3;
+        bool hasGates  = hasProg && std::find(lib.at("Programming").begin(),
+                                              lib.at("Programming").end(),
+                                              "Bill Gates") != lib.at("Programming").end();
+        bool hasEin    = hasSci  && std::find(lib.at("Science").begin(),
+                                              lib.at("Science").end(),
+                                              "Albert Einstein") != lib.at("Science").end();
+        bool ok = hasProg && hasSci && hasLit && hasPhil && hasGates && hasEin;
+        if (!ok) {
+            std::cerr << "FAIL [default-personality-library]: "
+                      << "prog=" << hasProg << " sci=" << hasSci
+                      << " lit=" << hasLit  << " phil=" << hasPhil
+                      << " gates=" << hasGates << " einstein=" << hasEin << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [default-personality-library]\n";
+        }
     }
 
     return failures;

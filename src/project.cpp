@@ -95,18 +95,20 @@ ProjectConfig LoadConfig(const std::string& projectDir) {
         else if (k == "llmBackend")  cfg.llmBackend  = v;
         else if (k == "apiKey")      cfg.apiKey      = v;
         else if (k == "ollamaModel") cfg.ollamaModel = v;
-        else if (k == "ollamaUrl")   cfg.ollamaUrl   = v;
+        else if (k == "ollamaUrl")    cfg.ollamaUrl    = v;
+        else if (k == "personalities") cfg.personalities = v;
     }
     return cfg;
 }
 
 bool SaveConfig(const std::string& projectDir, const ProjectConfig& cfg) {
     std::ofstream f(ConfigPath(projectDir));
-    f << "name="        << cfg.name        << "\n"
-      << "llmBackend="  << cfg.llmBackend  << "\n"
-      << "apiKey="      << cfg.apiKey      << "\n"
-      << "ollamaModel=" << cfg.ollamaModel << "\n"
-      << "ollamaUrl="   << cfg.ollamaUrl   << "\n";
+    f << "name="           << cfg.name           << "\n"
+      << "llmBackend="     << cfg.llmBackend     << "\n"
+      << "apiKey="         << cfg.apiKey         << "\n"
+      << "ollamaModel="    << cfg.ollamaModel    << "\n"
+      << "ollamaUrl="      << cfg.ollamaUrl      << "\n"
+      << "personalities="  << cfg.personalities  << "\n";
     return f.good();
 }
 

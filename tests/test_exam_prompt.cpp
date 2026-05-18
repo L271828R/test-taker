@@ -562,5 +562,58 @@ int test_exam_prompt() {
         }
     }
 
+    // ParseScoredResponse: :::tidbit block in EXPLANATION is preserved with
+    // correct newlines so RenderMarkdown can render it as a <details> widget.
+    // The tidbit opener must be at the START of a line (\n:::tidbit), not
+    // space-joined into the preceding prose, otherwise RenderMarkdown can't
+    // detect the block boundary.
+    {
+        std::string raw =
+            "SCORE: correct\n"
+            "EXPLANATION: A VPC is a Virtual Private Cloud.\n"
+            "\n"
+            ":::tidbit[Albert Einstein]\n"
+            "Think of isolation as curvature in network space-time.\n"
+            ":::\n"
+            "NEXT_QUESTION: What is a subnet?\n";
+        auto resp = ParseScoredResponse(raw);
+        bool hasExpl   = resp.explanation.find("Virtual Private Cloud") != std::string::npos;
+        // Tidbit opener must be on its own line (preceded by \n), not space-joined.
+        bool hasTidbit = resp.explanation.find("\n:::tidbit[Albert Einstein]") != std::string::npos;
+        bool hasNext   = resp.nextQuestion == "What is a subnet?";
+        if (!resp.parseOk || !hasExpl || !hasTidbit || !hasNext) {
+            std::cerr << "FAIL [parse-scored-tidbit]:"
+                      << " parseOk=" << resp.parseOk
+                      << " expl=" << hasExpl
+                      << " tidbit-on-own-line=" << hasTidbit
+                      << " next=" << hasNext << "\n"
+                      << "  explanation: '" << resp.explanation << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-scored-tidbit]\n";
+        }
+    }
+
+    // BuildScoringAndNextPrompt with personalities injects :::tidbit instruction
+    // and includes each personality name so the LLM knows who to pick from.
+    {
+        ExamConfig cfgPersonality = cfg;
+        cfgPersonality.personalities = {"Albert Einstein", "Bill Gates"};
+        std::string p = BuildScoringAndNextPrompt(cfgPersonality, {},
+                                                  "What is a VPC?", "A network.", 2);
+        bool hasTidbit   = p.find(":::tidbit") != std::string::npos;
+        bool hasEinstein = p.find("Albert Einstein") != std::string::npos;
+        bool hasGates    = p.find("Bill Gates")      != std::string::npos;
+        if (!hasTidbit || !hasEinstein || !hasGates) {
+            std::cerr << "FAIL [personality-in-prompt]:"
+                      << " tidbit=" << hasTidbit
+                      << " einstein=" << hasEinstein
+                      << " gates=" << hasGates << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [personality-in-prompt]\n";
+        }
+    }
+
     return failures;
 }

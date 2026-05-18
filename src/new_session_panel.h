@@ -7,6 +7,7 @@
 #include <wx/statline.h>
 #include "exam_prompt.h"
 #include "focus_list_panel.h"
+#include "personality_panel.h"
 #include "llm.h"
 
 class NewSessionPanel : public wxPanel {
@@ -36,7 +37,8 @@ private:
     wxStaticText* m_projectLabel   = nullptr;
     wxTextCtrl*   m_topicCtrl      = nullptr;  // short label (one line)
     wxTextCtrl*     m_instrCtrl      = nullptr;  // free-form focus instructions
-    FocusListPanel* m_focusListPanel = nullptr;  // weighted focus-area list
+    FocusListPanel*        m_focusListPanel    = nullptr;  // weighted focus-area list
+    PersonalityPickerPanel* m_personalityPanel = nullptr;  // guest commentator checkboxes
     wxChoice*     m_difficultyCtrl = nullptr;
     wxSpinCtrl*   m_countCtrl      = nullptr;
     wxChoice*     m_backendChoice  = nullptr;

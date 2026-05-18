@@ -130,6 +130,8 @@ set(SOURCES
     src/corpus_panel.cpp
     src/rag_logger.cpp
     src/focus_list_panel.cpp
+    src/personality_panel.cpp
+    src/personality_lib.cpp
     src/saved_convos.cpp
     src/saved_panel.cpp
 )
@@ -183,6 +185,7 @@ add_executable(test_test-taker
     src/embeddings.cpp
     src/rag_logger.cpp
     src/saved_convos.cpp
+    src/personality_lib.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})

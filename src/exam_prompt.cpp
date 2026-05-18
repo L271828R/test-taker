@@ -98,6 +98,28 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
 
     int questionNumber = (int)history.size() + 1;
 
+    // Build the personality tidbit instruction if personalities are configured.
+    std::string tidbitInstruction;
+    std::string tidbitFormatExample;
+    if (!cfg.personalities.empty()) {
+        std::string nameList;
+        for (const auto& p : cfg.personalities) {
+            if (!nameList.empty()) nameList += ", ";
+            nameList += p;
+        }
+        tidbitInstruction =
+            " After the explanation, on a new line add a :::tidbit[Name] block"
+            " — pick one of: " + nameList + " — using their characteristic voice"
+            " for a brief insight (1-3 sentences). Format exactly:\n"
+            ":::tidbit[Name]\n"
+            "<comment>\n"
+            ":::";
+        tidbitFormatExample =
+            ":::tidbit[Name]\n"
+            "<comment>\n"
+            ":::\n";
+    }
+
     if (userAnswer.empty()) {
         // Skipped: omit user-answer entirely so the model has nothing to narrate about.
         // The app sets Score::Skipped; only EXPLANATION + NEXT_QUESTION are needed.
@@ -105,18 +127,21 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
             << " of " << cfg.totalQuestions << " (did not attempt an answer).\n\n"
             << "Question: " << currentQuestion << "\n\n";
 
-        out << "Respond with exactly two lines:\n\n"
-               "EXPLANATION: <explain the correct answer in 2-5 sentences. Begin directly with the answer.>\n";
+        out << "Respond with exactly two sections:\n\n"
+               "EXPLANATION: <explain the correct answer in 2-5 sentences. Begin directly with the answer."
+            << tidbitInstruction << ">\n";
         if (questionsRemaining > 0) {
             out << "NEXT_QUESTION: <next question text only>\n\n"
                    "Output format (exactly):\n"
                    "EXPLANATION: ...\n"
-                   "NEXT_QUESTION: ...\n";
+                << tidbitFormatExample
+                << "NEXT_QUESTION: ...\n";
         } else {
             out << "NEXT_QUESTION: \n\n"
                    "Output format (exactly):\n"
                    "EXPLANATION: ...\n"
-                   "NEXT_QUESTION: \n";
+                << tidbitFormatExample
+                << "NEXT_QUESTION: \n";
         }
     } else {
         out << "The user just answered question " << questionNumber
@@ -124,23 +149,26 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
             << "Question: " << currentQuestion << "\n"
             << "User's answer: " << userAnswer << "\n\n";
 
-        out << "Your task — respond with exactly three lines in this order, nothing else:\n\n"
+        out << "Your task — respond in this order, nothing else:\n\n"
                "1. Score the answer:       SCORE: correct  OR  SCORE: partial  OR  SCORE: missed\n"
                "2. Explain the answer:     EXPLANATION: <state the correct answer and explain it in 2-5 sentences."
-               " Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer.>\n";
+               " Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer."
+            << tidbitInstruction << ">\n";
 
         if (questionsRemaining > 0) {
             out << "3. Ask the next question:  NEXT_QUESTION: <question text only>\n\n"
                    "Output format (exactly):\n"
                    "SCORE: ...\n"
                    "EXPLANATION: ...\n"
-                   "NEXT_QUESTION: ...\n";
+                << tidbitFormatExample
+                << "NEXT_QUESTION: ...\n";
         } else {
             out << "3. No more questions:      NEXT_QUESTION: \n\n"
                    "Output format (exactly):\n"
                    "SCORE: ...\n"
                    "EXPLANATION: ...\n"
-                   "NEXT_QUESTION: \n";
+                << tidbitFormatExample
+                << "NEXT_QUESTION: \n";
         }
     }
 
@@ -196,8 +224,8 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput) {
             inExplanation = false;
             resp.nextQuestion = line.substr(15);
             ++found;
-        } else if (inExplanation && !line.empty()) {
-            resp.explanation += " " + line;
+        } else if (inExplanation) {
+            resp.explanation += "\n" + line;
         }
     }
 

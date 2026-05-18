@@ -26,6 +26,29 @@
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
+// Personality persistence helpers
+// Pipe-separated names, e.g. "Albert Einstein|Bill Gates"
+// ---------------------------------------------------------------------------
+static std::string JoinPipe(const std::vector<std::string>& v) {
+    std::string out;
+    for (const auto& s : v) {
+        if (!out.empty()) out += "|";
+        out += s;
+    }
+    return out;
+}
+
+static std::vector<std::string> SplitPipe(const std::string& s) {
+    std::vector<std::string> result;
+    if (s.empty()) return result;
+    std::istringstream ss(s);
+    std::string tok;
+    while (std::getline(ss, tok, '|'))
+        if (!tok.empty()) result.push_back(tok);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Focus-area list persistence helpers
 // Format: "stars@@text|stars@@text|..."
 // ---------------------------------------------------------------------------
@@ -161,6 +184,16 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
         inner->Add(m_focusListPanel, 0, wxEXPAND | wxBOTTOM, 10);
     }
 
+    // ── Personality picker ────────────────────────────────────────────────
+    {
+        auto* label = new wxStaticText(this, wxID_ANY,
+            "Guest commentators — checked personalities appear as \xf0\x9f\x92\xac tidbits in explanations:");
+        inner->Add(label, 0, wxBOTTOM, 4);
+
+        m_personalityPanel = new PersonalityPickerPanel(this);
+        inner->Add(m_personalityPanel, 0, wxEXPAND | wxBOTTOM, 10);
+    }
+
     // ── Difficulty + Question count ───────────────────────────────────────
     {
         auto* row = new wxBoxSizer(wxHORIZONTAL);
@@ -290,6 +323,9 @@ void NewSessionPanel::SyncProject(const std::string& projectDir) {
             m_topicCtrl->Clear();
             m_instrCtrl->Clear();
             m_focusListPanel->SetAreas({});
+            // Load per-project personality selection from the project's .config file.
+            ProjectConfig pcfg = LoadConfig(projectDir);
+            m_personalityPanel->SetSelected(SplitPipe(pcfg.personalities));
             AppState st = LoadAppState();
             if (!st.backend.empty()) {
                 int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
@@ -302,6 +338,9 @@ void NewSessionPanel::SyncProject(const std::string& projectDir) {
             if (!st.ollamaModel.empty()) m_ollamaModel->SetValue(wxString::FromUTF8(st.ollamaModel));
         } else {
             RestoreFormState();
+            // Reload personalities from project config (same project, may have changed).
+            ProjectConfig pcfg = LoadConfig(projectDir);
+            m_personalityPanel->SetSelected(SplitPipe(pcfg.personalities));
         }
     }
     if (GetSizer()) GetSizer()->Layout();
@@ -344,6 +383,13 @@ void NewSessionPanel::SaveFormState() const {
     st.ollamaModel        = m_ollamaModel->GetValue().ToStdString();
     st.lastExamProjectDir = m_activeProjectDir;
     SaveAppState(st);
+
+    // Personalities are per-project: save to the project's .config file.
+    if (!m_activeProjectDir.empty()) {
+        ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
+        pcfg.personalities = JoinPipe(m_personalityPanel->GetSelected());
+        SaveConfig(m_activeProjectDir, pcfg);
+    }
 }
 
 void NewSessionPanel::RestoreFormState() {
@@ -420,6 +466,7 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
         m_difficultyCtrl->GetSelection()).ToStdString();
     cfg.totalQuestions = m_countCtrl->GetValue();
     cfg.useCorpus      = m_corpusSizer->IsShown() && m_useCorpusCheck->GetValue();
+    cfg.personalities  = m_personalityPanel->GetSelected();
 
     // Load context.md if present
     std::string ctxPath = m_activeProjectDir + "/context.md";

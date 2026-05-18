@@ -8,6 +8,7 @@ struct ProjectConfig {
     std::string apiKey;
     std::string ollamaModel;
     std::string ollamaUrl;    // default: http://localhost:11434
+    std::string personalities; // pipe-separated selected commentator names, e.g. "Einstein|Gates"
 };
 
 // Creates <baseDir>/<name>/ with a claude.md stub and an empty .index file.
