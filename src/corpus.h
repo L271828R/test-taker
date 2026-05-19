@@ -17,6 +17,10 @@ struct CorpusSearchResult {
     float score = 0.0f;
 };
 
+// Returns the repo-name subdirectory group for a git-imported doc whose path is
+// <projectDir>/corpus/<group>/<file>. Returns "" for top-level (standalone) docs.
+std::string CorpusDocGroup(const std::string& docPath, const std::string& projectDir);
+
 // Copies srcPath into <projectDir>/corpus/<filename>, creating the directory if needed.
 // Returns the destination path on success, or empty string + sets err on failure.
 std::string CopyFileToCorpusDir(const std::string& projectDir,

@@ -101,15 +101,47 @@ void CorpusPanel::SyncProject(const std::string& projectDir, const std::string& 
 
 void CorpusPanel::RefreshList() {
     m_list->DeleteAllItems();
+    m_rowDocIds.clear();
     m_delBtn->Disable();
     if (!m_corpus) return;
 
-    for (const auto& doc : m_corpus->ListDocuments()) {
-        long row = m_list->InsertItem(m_list->GetItemCount(), doc.name);
-        m_list->SetItem(row, 1, std::to_string(m_corpus->ChunkCount(doc.id)));
-        std::string date = doc.addedAt.size() >= 10 ? doc.addedAt.substr(0, 10) : doc.addedAt;
-        m_list->SetItem(row, 2, date);
-        m_list->SetItemData(row, static_cast<wxUIntPtr>(doc.id));
+    auto docs = m_corpus->ListDocuments();
+
+    // Separate standalone docs from git-import groups.
+    std::map<std::string, std::vector<const CorpusDoc*>> groups;
+    std::vector<const CorpusDoc*> standalone;
+    for (const auto& doc : docs) {
+        std::string grp = CorpusDocGroup(doc.path, m_projectDir);
+        if (grp.empty())
+            standalone.push_back(&doc);
+        else
+            groups[grp].push_back(&doc);
+    }
+
+    auto insertRow = [&](const std::string& label, int chunks,
+                         const std::string& date, std::vector<int> ids) {
+        long row = m_list->InsertItem(m_list->GetItemCount(), label);
+        m_list->SetItem(row, 1, std::to_string(chunks));
+        m_list->SetItem(row, 2, date.size() >= 10 ? date.substr(0, 10) : date);
+        m_rowDocIds[row] = std::move(ids);
+    };
+
+    for (const auto* doc : standalone) {
+        insertRow(doc->name, m_corpus->ChunkCount(doc->id), doc->addedAt, {doc->id});
+    }
+
+    for (const auto& [grpName, grpDocs] : groups) {
+        int totalChunks = 0;
+        std::string earliest;
+        std::vector<int> ids;
+        for (const auto* doc : grpDocs) {
+            totalChunks += m_corpus->ChunkCount(doc->id);
+            ids.push_back(doc->id);
+            std::string d = doc->addedAt.size() >= 10 ? doc->addedAt.substr(0, 10) : doc->addedAt;
+            if (earliest.empty() || d < earliest) earliest = d;
+        }
+        std::string label = grpName + " (" + std::to_string(grpDocs.size()) + " files)";
+        insertRow(label, totalChunks, earliest, std::move(ids));
     }
 }
 
@@ -539,20 +571,41 @@ void CorpusPanel::OnDelete() {
     long sel = m_list->GetNextItem(-1, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
     if (sel < 0 || !m_corpus) return;
 
-    int docId = static_cast<int>(m_list->GetItemData(sel));
+    auto it = m_rowDocIds.find(sel);
+    if (it == m_rowDocIds.end()) return;
+
     std::string err;
-    m_corpus->DeleteDocument(docId, err);
+    for (int docId : it->second)
+        m_corpus->DeleteDocument(docId, err);
     RefreshList();
     SetStatus(err.empty() ? "Deleted." : "Delete failed: " + err);
 }
 
 void CorpusPanel::OnOpen(wxListEvent& e) {
     if (!m_corpus) return;
-    int docId = static_cast<int>(m_list->GetItemData(e.GetIndex()));
-    for (const auto& doc : m_corpus->ListDocuments()) {
-        if (doc.id == docId) {
-            wxLaunchDefaultApplication(wxString::FromUTF8(doc.path));
-            return;
+    auto it = m_rowDocIds.find(e.GetIndex());
+    if (it == m_rowDocIds.end() || it->second.empty()) return;
+
+    if (it->second.size() == 1) {
+        // Single doc — open the file.
+        for (const auto& doc : m_corpus->ListDocuments()) {
+            if (doc.id == it->second[0]) {
+                wxLaunchDefaultApplication(wxString::FromUTF8(doc.path));
+                return;
+            }
+        }
+    } else {
+        // Group — open the containing folder.
+        for (const auto& doc : m_corpus->ListDocuments()) {
+            if (doc.id == it->second[0]) {
+                fs::path folder = fs::path(doc.path).parent_path();
+                // Walk up to the group folder (<projectDir>/corpus/<repoName>/).
+                std::string grp = CorpusDocGroup(doc.path, m_projectDir);
+                if (!grp.empty())
+                    folder = fs::path(m_projectDir) / "corpus" / grp;
+                wxLaunchDefaultApplication(wxString::FromUTF8(folder.string()));
+                return;
+            }
         }
     }
 }

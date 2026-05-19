@@ -9,6 +9,15 @@
 
 namespace fs = std::filesystem;
 
+std::string CorpusDocGroup(const std::string& docPath, const std::string& projectDir) {
+    std::string prefix = projectDir + "/corpus/";
+    if (docPath.rfind(prefix, 0) != 0) return {};
+    std::string rel = docPath.substr(prefix.size());
+    size_t slash = rel.find('/');
+    if (slash == std::string::npos) return {};
+    return rel.substr(0, slash);
+}
+
 std::string CorpusContextFor(const std::string& projectDir,
                               const std::string& query,
                               const std::string& ollamaUrl,

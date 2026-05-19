@@ -2,9 +2,11 @@
 #include <wx/wx.h>
 #include <wx/listctrl.h>
 #include <atomic>
+#include <map>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 #include "corpus.h"
 
 class CorpusPanel : public wxPanel {
@@ -33,6 +35,9 @@ private:
     std::string             m_projectDir;
     std::string             m_ollamaUrl;
     std::unique_ptr<Corpus> m_corpus;
+
+    // Maps list row index → doc ids for that row (1 for standalone, N for groups).
+    std::map<long, std::vector<int>> m_rowDocIds;
 
     // Shared with background thread so it can detect panel teardown.
     std::shared_ptr<std::atomic<bool>> m_cancel;

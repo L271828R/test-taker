@@ -441,5 +441,53 @@ int test_corpus() {
         fs::remove(src);
     }
 
+    // ── CorpusDocGroup tests ─────────────────────────────────────────────────
+
+    // Standalone doc (top-level corpus file) → empty group
+    {
+        std::string group = CorpusDocGroup("/home/user/proj/corpus/notes.txt", "/home/user/proj");
+        if (!group.empty()) {
+            std::cerr << "FAIL [corpus-doc-group-standalone]: expected empty, got '" << group << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [corpus-doc-group-standalone]\n";
+        }
+    }
+
+    // Git-imported doc (nested under repo subdir) → repo name
+    {
+        std::string group = CorpusDocGroup("/home/user/proj/corpus/googletest/docs/primer.md",
+                                           "/home/user/proj");
+        if (group != "googletest") {
+            std::cerr << "FAIL [corpus-doc-group-git]: expected 'googletest', got '" << group << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [corpus-doc-group-git]\n";
+        }
+    }
+
+    // Deeply nested git-imported doc → still returns top-level subdir name
+    {
+        std::string group = CorpusDocGroup("/home/user/proj/corpus/myrepo/src/lib/foo.cpp",
+                                           "/home/user/proj");
+        if (group != "myrepo") {
+            std::cerr << "FAIL [corpus-doc-group-deep]: expected 'myrepo', got '" << group << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [corpus-doc-group-deep]\n";
+        }
+    }
+
+    // Path not under corpus dir → empty group
+    {
+        std::string group = CorpusDocGroup("/other/path/file.txt", "/home/user/proj");
+        if (!group.empty()) {
+            std::cerr << "FAIL [corpus-doc-group-unrelated]: expected empty, got '" << group << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [corpus-doc-group-unrelated]\n";
+        }
+    }
+
     return failures;
 }
