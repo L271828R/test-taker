@@ -100,6 +100,9 @@ ProjectConfig LoadConfig(const std::string& projectDir) {
         else if (k == "examTopic")        cfg.examTopic        = v;
         else if (k == "examInstructions") cfg.examInstructions = v;
         else if (k == "examFocusAreas")   cfg.examFocusAreas   = v;
+        else if (k == "examMoreOf")       cfg.examMoreOf       = v;
+        else if (k == "examLessOf")       cfg.examLessOf       = v;
+        else if (k == "examTidbitCount")  cfg.examTidbitCount  = std::stoi(v.empty() ? "1" : v);
         else if (k == "examBackend")      cfg.examBackend      = v;
         else if (k == "examApiKey")       cfg.examApiKey       = v;
         else if (k == "examOllamaModel")  cfg.examOllamaModel  = v;
@@ -119,6 +122,9 @@ bool SaveConfig(const std::string& projectDir, const ProjectConfig& cfg) {
       << "examTopic="        << cfg.examTopic        << "\n"
       << "examInstructions=" << cfg.examInstructions << "\n"
       << "examFocusAreas="   << cfg.examFocusAreas   << "\n"
+      << "examMoreOf="       << cfg.examMoreOf       << "\n"
+      << "examLessOf="       << cfg.examLessOf       << "\n"
+      << "examTidbitCount="  << cfg.examTidbitCount  << "\n"
       << "examBackend="      << cfg.examBackend      << "\n"
       << "examApiKey="       << cfg.examApiKey       << "\n"
       << "examOllamaModel="  << cfg.examOllamaModel  << "\n"

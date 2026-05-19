@@ -104,6 +104,8 @@ std::vector<QuestionTurn> ParseSession(const std::string& body) {
             cur.note = decodeNewlines(line.substr(6));
         } else if (inTurn && line.rfind("SAVED: ", 0) == 0) {
             cur.saved = (line.substr(7) == "true");
+        } else if (inTurn && line.rfind("SILENT: ", 0) == 0) {
+            cur.silentSkip = (line.substr(8) == "true");
         }
     }
     if (inTurn) turns.push_back(cur);
@@ -117,8 +119,9 @@ std::string SerializeSessionBody(const std::vector<QuestionTurn>& turns) {
         out << "Q: "           << encodeNewlines(t.question)    << "\n";
         out << "A: "           << encodeNewlines(t.userAnswer)  << "\n";
         out << "SCORE: "       << ScoreToString(t.score) << "\n";
-        out << "FLAG: "  << (t.flagged ? "true" : "false") << "\n";
-        out << "SAVED: " << (t.saved   ? "true" : "false") << "\n";
+        out << "FLAG: "   << (t.flagged    ? "true" : "false") << "\n";
+        out << "SAVED: "  << (t.saved      ? "true" : "false") << "\n";
+        out << "SILENT: " << (t.silentSkip ? "true" : "false") << "\n";
         out << "EXPLANATION: " << encodeNewlines(t.explanation) << "\n";
         if (!t.note.empty())
             out << "NOTE: " << encodeNewlines(t.note) << "\n";

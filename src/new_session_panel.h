@@ -39,6 +39,7 @@ private:
     wxTextCtrl*     m_instrCtrl      = nullptr;  // free-form focus instructions
     FocusListPanel*        m_focusListPanel    = nullptr;  // weighted focus-area list
     PersonalityPickerPanel* m_personalityPanel = nullptr;  // guest commentator checkboxes
+    wxSpinCtrl*   m_tidbitCountCtrl = nullptr;  // tidbits per explanation turn (1–3)
     wxChoice*     m_difficultyCtrl = nullptr;
     wxSpinCtrl*   m_countCtrl      = nullptr;
     wxChoice*     m_backendChoice  = nullptr;
@@ -59,6 +60,7 @@ private:
     void OnStart(wxCommandEvent&);
     void OnBackendChanged(wxCommandEvent&);
     void OnOpenContext(wxCommandEvent&);
+    void OnResetWeights(wxCommandEvent&);
 
     wxDECLARE_EVENT_TABLE();
 };

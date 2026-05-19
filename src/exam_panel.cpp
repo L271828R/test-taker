@@ -7,6 +7,7 @@
 #include "markdown.h"
 #include "logger.h"
 #include "saved_convos.h"
+#include <algorithm>
 #include <ctime>
 #include <filesystem>
 #include <sstream>
@@ -18,15 +19,17 @@ namespace fs = std::filesystem;
 enum {
     ID_EXAM_SEND = wxID_HIGHEST + 100,
     ID_EXAM_SKIP,
+    ID_EXAM_SILENT_SKIP,
     ID_EXAM_FLAG,
     ID_EXAM_ABANDON,
 };
 
 wxBEGIN_EVENT_TABLE(ExamPanel, wxPanel)
-    EVT_BUTTON(ID_EXAM_SEND,    ExamPanel::OnSend)
-    EVT_BUTTON(ID_EXAM_SKIP,    ExamPanel::OnSkip)
-    EVT_BUTTON(ID_EXAM_FLAG,    ExamPanel::OnFlag)
-    EVT_BUTTON(ID_EXAM_ABANDON, ExamPanel::OnAbandon)
+    EVT_BUTTON(ID_EXAM_SEND,        ExamPanel::OnSend)
+    EVT_BUTTON(ID_EXAM_SKIP,        ExamPanel::OnSkip)
+    EVT_BUTTON(ID_EXAM_SILENT_SKIP, ExamPanel::OnSilentSkip)
+    EVT_BUTTON(ID_EXAM_FLAG,        ExamPanel::OnFlag)
+    EVT_BUTTON(ID_EXAM_ABANDON,     ExamPanel::OnAbandon)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, ExamPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
@@ -77,17 +80,20 @@ ExamPanel::ExamPanel(wxWindow* parent,
         }
         evt.Skip();
     });
-    m_sendBtn    = new wxButton(m_leftPanel, ID_EXAM_SEND,    "Submit");
-    m_skipBtn    = new wxButton(m_leftPanel, ID_EXAM_SKIP,    "I don't know");
+    m_sendBtn       = new wxButton(m_leftPanel, ID_EXAM_SEND,        "Submit");
+    m_skipBtn       = new wxButton(m_leftPanel, ID_EXAM_SKIP,        "I don't know");
+    m_silentSkipBtn = new wxButton(m_leftPanel, ID_EXAM_SILENT_SKIP, wxString::FromUTF8("Skip \xe2\x8f\xad"));
+    m_silentSkipBtn->SetToolTip("Skip this question silently — not sent to the LLM");
     m_flagBtn    = new wxButton(m_leftPanel, ID_EXAM_FLAG,    "Flag for review");
     m_abandonBtn = new wxButton(m_leftPanel, ID_EXAM_ABANDON, "End Session");
 
     inputRow->Add(m_answerCtrl, 1, wxEXPAND | wxRIGHT, 4);
     auto* btnCol = new wxBoxSizer(wxVERTICAL);
-    btnCol->Add(m_sendBtn,    0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_skipBtn,    0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_flagBtn,    0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_abandonBtn, 0, wxEXPAND);
+    btnCol->Add(m_sendBtn,       0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_skipBtn,       0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_silentSkipBtn, 0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_flagBtn,       0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_abandonBtn,    0, wxEXPAND);
     inputRow->Add(btnCol, 0, wxEXPAND);
 
     m_statusLabel = new wxStaticText(m_leftPanel, wxID_ANY, "");
@@ -114,7 +120,7 @@ ExamPanel::ExamPanel(wxWindow* parent,
 
     // Start idle — no active session yet.
     m_sendBtn->Disable();
-    m_skipBtn->Disable();
+    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
     m_flagBtn->Disable();
     m_abandonBtn->Disable();
     Render();
@@ -156,6 +162,21 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_cfg             = cfg;
     m_llmCfg          = llmCfg;
     SetDarkMode(darkMode);
+    {
+        ProjectConfig pcfg = LoadConfig(projectDir);
+        auto splitPipe = [](const std::string& s) {
+            std::vector<std::string> v;
+            std::istringstream ss(s);
+            std::string tok;
+            while (std::getline(ss, tok, '|'))
+                if (!tok.empty()) v.push_back(tok);
+            return v;
+        };
+        m_cfg.moreOfTopics = splitPipe(pcfg.examMoreOf);
+        m_cfg.lessOfTopics = splitPipe(pcfg.examLessOf);
+        if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
+            m_cfg.tidbitCount = pcfg.examTidbitCount;
+    }
     m_active          = true;
     m_busy            = false;
     m_questionIndex   = 0;
@@ -163,7 +184,7 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_currentQuestion.clear();
 
     m_sendBtn->Enable();
-    m_skipBtn->Enable();
+    m_skipBtn->Enable(); m_silentSkipBtn->Enable();
     m_flagBtn->Disable(); // enabled after first question is answered
     m_abandonBtn->Enable();
 
@@ -219,14 +240,14 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
 
     if (complete) {
         m_sendBtn->Disable();
-        m_skipBtn->Disable();
+        m_skipBtn->Disable(); m_silentSkipBtn->Disable();
         m_flagBtn->Enable(!turns.empty());
         m_abandonBtn->Disable();
         m_statusLabel->SetLabel("Session complete. See Review tab for results.");
     } else {
         // Session was interrupted mid-way — re-enable input, ask next question.
         m_sendBtn->Enable();
-        m_skipBtn->Enable();
+        m_skipBtn->Enable(); m_silentSkipBtn->Enable();
         m_flagBtn->Enable(!turns.empty());
         m_abandonBtn->Enable();
         int next = (int)turns.size() + 1;
@@ -266,7 +287,7 @@ void ExamPanel::StartDrill(const std::string& projectDir,
     m_cfg.totalQuestions = 1;
 
     m_sendBtn->Enable();
-    m_skipBtn->Enable();
+    m_skipBtn->Enable(); m_silentSkipBtn->Enable();
     m_flagBtn->Enable();
     m_abandonBtn->Enable();
 
@@ -280,7 +301,7 @@ void ExamPanel::RequestFirstQuestion() {
     m_busy = true;
     m_statusLabel->SetLabel("Asking first question…");
     m_sendBtn->Disable();
-    m_skipBtn->Disable();
+    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
 
     ExamConfig  examCfg    = m_cfg;
     LLMConfig   llmCfg     = m_llmCfg;
@@ -317,7 +338,7 @@ void ExamPanel::RequestFirstQuestion() {
 
             m_statusLabel->SetLabel("Question 1 of " + std::to_string(m_cfg.totalQuestions));
             m_sendBtn->Enable();
-            m_skipBtn->Enable();
+            m_skipBtn->Enable(); m_silentSkipBtn->Enable();
             Render(true);  // scroll to bottom to show the new question
         });
     }).detach();
@@ -328,7 +349,7 @@ void ExamPanel::RequestNextQuestion() {
     if (m_busy) return;
     m_busy = true;
     m_sendBtn->Disable();
-    m_skipBtn->Disable();
+    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
     m_statusLabel->SetLabel("Asking next question…");
 
     ExamConfig  examCfg    = m_cfg;
@@ -375,7 +396,7 @@ void ExamPanel::RequestNextQuestion() {
             m_statusLabel->SetLabel("Question " + std::to_string(qNum)
                                     + " of " + std::to_string(m_cfg.totalQuestions));
             m_sendBtn->Enable();
-            m_skipBtn->Enable();
+            m_skipBtn->Enable(); m_silentSkipBtn->Enable();
             Render(true);  // scroll to bottom to show the new question
         });
     }).detach();
@@ -386,7 +407,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
     if (m_busy || m_currentQuestion.empty()) return;
     m_busy = true;
     m_sendBtn->Disable();
-    m_skipBtn->Disable();
+    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
     m_statusLabel->SetLabel("Scoring…");
 
     int         remaining       = m_cfg.totalQuestions - (int)m_turns.size() - 1;
@@ -417,7 +438,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_statusLabel->SetLabel("LLM error: " + result.error);
                 Logger::get().log("ExamPanel score error: " + result.error);
                 m_sendBtn->Enable();
-                m_skipBtn->Enable();
+                m_skipBtn->Enable(); m_silentSkipBtn->Enable();
                 return;
             }
 
@@ -450,7 +471,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_statusLabel->SetLabel("Question " + std::to_string(qNum)
                     + " of " + std::to_string(m_cfg.totalQuestions));
                 m_sendBtn->Enable();
-                m_skipBtn->Enable();
+                m_skipBtn->Enable(); m_silentSkipBtn->Enable();
                 m_answerCtrl->Clear();
             } else {
                 // Session complete — keep lastSessionFile so Exam tab can show
@@ -459,7 +480,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_currentQuestion.clear();
                 m_statusLabel->SetLabel("Session complete! See Review tab for results.");
                 m_sendBtn->Disable();
-                m_skipBtn->Disable();
+                m_skipBtn->Disable(); m_silentSkipBtn->Disable();
                 m_abandonBtn->Disable();
                 if (m_onComplete) m_onComplete(m_sessionFile);
             }
@@ -492,7 +513,8 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
         for (int i = 0; i < (int)m_turns.size(); ++i)
             chatCounts.push_back((int)LoadTurnChat(m_sessionFile, i).size());
 
-        body << RenderExamTurns(m_turns, chatCounts);
+        body << RenderExamTurns(m_turns, chatCounts,
+                                m_cfg.moreOfTopics, m_cfg.lessOfTopics);
 
         if (!m_currentQuestion.empty()) {
             body << "<div class='current-question'>"
@@ -549,6 +571,56 @@ void ExamPanel::OnSkip(wxCommandEvent&) {
     SubmitAnswer("");
 }
 
+void ExamPanel::OnSilentSkip(wxCommandEvent&) {
+    if (m_busy || m_currentQuestion.empty()) return;
+
+    QuestionTurn turn;
+    turn.question   = m_currentQuestion;
+    turn.score      = Score::Skipped;
+    turn.silentSkip = true;
+    m_turns.push_back(turn);
+    AppendSessionTurn(m_sessionFile, turn);
+
+    m_currentQuestion.clear();
+    m_flagBtn->Enable();
+    ++m_questionIndex;
+
+    if (m_questionIndex < m_cfg.totalQuestions) {
+        RequestNextQuestion();
+    } else {
+        m_active = false;
+        m_sendBtn->Disable();
+        m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+        m_abandonBtn->Disable();
+        m_statusLabel->SetLabel("Session complete! See Review tab for results.");
+        if (m_onComplete) m_onComplete(m_sessionFile);
+        Render(true);
+    }
+}
+
+static std::string QuestionSnippet(const std::string& q) {
+    std::string s = q.substr(0, 80);
+    auto nl = s.find('\n');
+    if (nl != std::string::npos) s = s.substr(0, nl);
+    if (s.size() > 60) s = s.substr(0, 57) + "...";
+    return s;
+}
+
+static void AddToTopicList(std::vector<std::string>& list, const std::string& item) {
+    for (const auto& e : list)
+        if (e == item) return;
+    list.push_back(item);
+}
+
+static std::string JoinPipeVec(const std::vector<std::string>& v) {
+    std::string s;
+    for (size_t i = 0; i < v.size(); ++i) {
+        if (i) s += '|';
+        s += v[i];
+    }
+    return s;
+}
+
 void ExamPanel::OnAbandon(wxCommandEvent&) {
     int ans = wxMessageBox(
         "End this session now?\n\nProgress so far will be saved to the Review tab.",
@@ -567,7 +639,7 @@ void ExamPanel::Clear() {
     m_projectDir.clear();
 
     m_sendBtn->Disable();
-    m_skipBtn->Disable();
+    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
     m_flagBtn->Disable();
     m_abandonBtn->Disable();
     m_statusLabel->SetLabel("");
@@ -585,7 +657,7 @@ void ExamPanel::AbandonSession() {
     m_currentQuestion.clear();
 
     m_sendBtn->Disable();
-    m_skipBtn->Disable();
+    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
     m_abandonBtn->Disable();
     m_statusLabel->SetLabel("Session ended. See Review tab for results.");
 
@@ -789,7 +861,47 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         Logger::get().log("Turn " + std::to_string(idx) + " saved to saved_convos.md");
 
         if (m_onSavedConvo) m_onSavedConvo();
-        Render();
+        // Update the button in-place — avoids a full SetPage() that resets scroll.
+        std::string script =
+            "var b=document.querySelector(\"a[href='testtaker://save/"
+            + std::to_string(idx) + "']\");"
+            "if(b){b.classList.add('saved');b.innerHTML='🔖 saved';}";
+        m_webView->RunScript(script);
+        return;
+    }
+
+    if (url.StartsWith("testtaker://more/") || url.StartsWith("testtaker://less/")) {
+        evt.Veto();
+        bool isMore = url.StartsWith("testtaker://more/");
+        long idx = -1;
+        url.Mid(isMore ? 17 : 17).ToLong(&idx);  // both prefixes are 17 chars
+        if (idx < 0 || idx >= (long)m_turns.size() || m_projectDir.empty()) return;
+
+        std::string snippet = QuestionSnippet(m_turns[idx].question);
+        if (isMore) {
+            // Remove from lessOf if present, add to moreOf
+            auto& less = m_cfg.lessOfTopics;
+            less.erase(std::remove(less.begin(), less.end(), snippet), less.end());
+            AddToTopicList(m_cfg.moreOfTopics, snippet);
+        } else {
+            // Remove from moreOf if present, add to lessOf
+            auto& more = m_cfg.moreOfTopics;
+            more.erase(std::remove(more.begin(), more.end(), snippet), more.end());
+            AddToTopicList(m_cfg.lessOfTopics, snippet);
+        }
+        ProjectConfig pcfg = LoadConfig(m_projectDir);
+        pcfg.examMoreOf = JoinPipeVec(m_cfg.moreOfTopics);
+        pcfg.examLessOf = JoinPipeVec(m_cfg.lessOfTopics);
+        SaveConfig(m_projectDir, pcfg);
+
+        // Update both buttons in-place — no scroll reset.
+        std::string si = std::to_string(idx);
+        std::string script =
+            "var m=document.querySelector(\"a[href='testtaker://more/" + si + "']\");"
+            "var l=document.querySelector(\"a[href='testtaker://less/" + si + "']\");"
+            "if(m){m.classList." + std::string(isMore ? "add" : "remove") + "('voted');}"
+            "if(l){l.classList." + std::string(isMore ? "remove" : "add") + "('voted');}";
+        m_webView->RunScript(script);
         return;
     }
 

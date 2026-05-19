@@ -472,6 +472,63 @@ int test_exam_prompt() {
         }
     }
 
+    // RenderExamTurns: thumb buttons appear on every turn
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question = "What is RAII?"; t0.userAnswer = "x"; t0.score = Score::Star3;
+        turns.push_back(t0);
+        std::string html = RenderExamTurns(turns, {0});
+        bool hasMore = html.find("testtaker://more/0") != std::string::npos;
+        bool hasLess = html.find("testtaker://less/0") != std::string::npos;
+        if (!hasMore || !hasLess) {
+            std::cerr << "FAIL [render-thumb-buttons]: more=" << hasMore << " less=" << hasLess << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-thumb-buttons]\n";
+        }
+    }
+
+    // RenderExamTurns: voted class set when question snippet is in moreOfTopics
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question = "What is RAII?"; t0.userAnswer = "x"; t0.score = Score::Star3;
+        turns.push_back(t0);
+        std::vector<std::string> moreOf = {"What is RAII?"};
+        std::string html = RenderExamTurns(turns, {0}, moreOf, {});
+        bool moreVoted = html.find("more-btn voted") != std::string::npos
+                      || html.find("more-btn\" voted") != std::string::npos
+                      || (html.find("testtaker://more/0") != std::string::npos
+                          && html.find("voted") != std::string::npos);
+        if (!moreVoted) {
+            std::cerr << "FAIL [render-more-voted]: voted class not set\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-more-voted]\n";
+        }
+    }
+
+    // RenderExamTurns: voted class set when question snippet is in lessOfTopics
+    {
+        std::vector<QuestionTurn> turns;
+        QuestionTurn t0;
+        t0.question = "What is a vtable?"; t0.userAnswer = "x"; t0.score = Score::Star2;
+        turns.push_back(t0);
+        std::vector<std::string> lessOf = {"What is a vtable?"};
+        std::string html = RenderExamTurns(turns, {0}, {}, lessOf);
+        bool lessVoted = html.find("less-btn voted") != std::string::npos
+                      || html.find("less-btn\" voted") != std::string::npos
+                      || (html.find("testtaker://less/0") != std::string::npos
+                          && html.find("voted") != std::string::npos);
+        if (!lessVoted) {
+            std::cerr << "FAIL [render-less-voted]: voted class not set\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-less-voted]\n";
+        }
+    }
+
     // RenderExamTurns: newlines in user answer produce separate paragraphs/breaks
     {
         std::vector<QuestionTurn> turns;
@@ -635,24 +692,191 @@ int test_exam_prompt() {
         }
     }
 
-    // BuildScoringAndNextPrompt with personalities injects :::tidbit instruction
-    // and includes each personality name so the LLM knows who to pick from.
+    // BuildScoringAndNextPrompt with personalities: the prompt must name exactly
+    // ONE personality in the :::tidbit instruction — not a "pick one of" list.
+    // Giving the LLM a list causes it to always pick the first (alphabetically),
+    // so we select the character at prompt-build time.
     {
         ExamConfig cfgPersonality = cfg;
         cfgPersonality.personalities = {"Albert Einstein", "Bill Gates"};
         std::string p = BuildScoringAndNextPrompt(cfgPersonality, {},
                                                   "What is a VPC?", "A network.", 2);
-        bool hasTidbit   = p.find(":::tidbit") != std::string::npos;
-        bool hasEinstein = p.find("Albert Einstein") != std::string::npos;
-        bool hasGates    = p.find("Bill Gates")      != std::string::npos;
-        if (!hasTidbit || !hasEinstein || !hasGates) {
+        bool hasTidbit    = p.find(":::tidbit") != std::string::npos;
+        bool hasEinstein  = p.find("Albert Einstein") != std::string::npos;
+        bool hasGates     = p.find("Bill Gates")      != std::string::npos;
+        bool hasPickOneOf = p.find("pick one of")     != std::string::npos;
+        // Exactly one personality must appear; the "pick one of" list must be gone.
+        bool exactlyOne   = (hasEinstein != hasGates);  // XOR: one but not both
+        if (!hasTidbit || !exactlyOne || hasPickOneOf) {
             std::cerr << "FAIL [personality-in-prompt]:"
                       << " tidbit=" << hasTidbit
                       << " einstein=" << hasEinstein
-                      << " gates=" << hasGates << "\n";
+                      << " gates=" << hasGates
+                      << " pickOneOf=" << hasPickOneOf << "\n";
             ++failures;
         } else {
             std::cout << "PASS [personality-in-prompt]\n";
+        }
+    }
+
+    // With a single personality the name must appear in the instruction.
+    {
+        ExamConfig cfgOne = cfg;
+        cfgOne.personalities = {"Richard Feynman"};
+        std::string p = BuildScoringAndNextPrompt(cfgOne, {},
+                                                  "What is spin?", "A quantum number.", 2);
+        bool hasFeynman   = p.find("Richard Feynman") != std::string::npos;
+        bool hasPickOneOf = p.find("pick one of")     != std::string::npos;
+        if (!hasFeynman || hasPickOneOf) {
+            std::cerr << "FAIL [personality-single]: feynman=" << hasFeynman
+                      << " pickOneOf=" << hasPickOneOf << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [personality-single]\n";
+        }
+    }
+
+    // moreOfTopics injected into BuildFirstQuestionPrompt
+    {
+        ExamConfig c = cfg;
+        c.moreOfTopics = {"bucket versioning", "presigned URLs"};
+        std::string p = BuildFirstQuestionPrompt(c);
+        bool ok = p.find("bucket versioning") != std::string::npos
+               && p.find("presigned URLs")    != std::string::npos;
+        if (!ok) {
+            std::cerr << "FAIL [more-of-in-first-prompt]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [more-of-in-first-prompt]\n";
+        }
+    }
+
+    // lessOfTopics injected into BuildFirstQuestionPrompt
+    {
+        ExamConfig c = cfg;
+        c.lessOfTopics = {"basic bucket creation"};
+        std::string p = BuildFirstQuestionPrompt(c);
+        bool ok = p.find("basic bucket creation") != std::string::npos;
+        if (!ok) {
+            std::cerr << "FAIL [less-of-in-first-prompt]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [less-of-in-first-prompt]\n";
+        }
+    }
+
+    // moreOfTopics + lessOfTopics injected into BuildScoringAndNextPrompt
+    {
+        ExamConfig c = cfg;
+        c.moreOfTopics = {"cross-account roles"};
+        c.lessOfTopics = {"ARN syntax"};
+        std::vector<QuestionTurn> history;
+        std::string p = BuildScoringAndNextPrompt(c, history, "What is IAM?", "A service.", 3);
+        bool moreOk = p.find("cross-account roles") != std::string::npos;
+        bool lessOk = p.find("ARN syntax")          != std::string::npos;
+        if (!moreOk || !lessOk) {
+            std::cerr << "FAIL [topic-weights-in-scoring-prompt]: more=" << moreOk
+                      << " less=" << lessOk << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [topic-weights-in-scoring-prompt]\n";
+        }
+    }
+
+    // empty moreOfTopics/lessOfTopics produce no extra injection lines
+    {
+        ExamConfig c = cfg;
+        std::string p = BuildFirstQuestionPrompt(c);
+        bool noMore = p.find("Explore more") == std::string::npos;
+        bool noLess = p.find("Reduce questions") == std::string::npos;
+        if (!noMore || !noLess) {
+            std::cerr << "FAIL [no-topic-weights-no-injection]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [no-topic-weights-no-injection]\n";
+        }
+    }
+
+    // BuildScoringAndNextPrompt omits silently-skipped turns from history
+    {
+        ExamConfig c = cfg;
+        std::vector<QuestionTurn> history;
+        QuestionTurn t0;
+        t0.question = "What is an S3 bucket?"; t0.userAnswer = "A storage unit.";
+        t0.score = Score::Star3; t0.silentSkip = false;
+        QuestionTurn t1;
+        t1.question = "What is a presigned URL?"; t1.userAnswer = "";
+        t1.score = Score::Skipped; t1.silentSkip = true;
+        history.push_back(t0);
+        history.push_back(t1);
+        std::string p = BuildScoringAndNextPrompt(c, history, "What is IAM?", "A service.", 2);
+        bool hasS3    = p.find("S3 bucket") != std::string::npos;
+        bool noSilent = p.find("presigned URL") == std::string::npos;
+        if (!hasS3 || !noSilent) {
+            std::cerr << "FAIL [silent-skip-omitted-from-history]: hasS3=" << hasS3
+                      << " noSilent=" << noSilent << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [silent-skip-omitted-from-history]\n";
+        }
+    }
+
+    // tidbitCount=2 with exactly 2 personalities → both appear in scoring prompt
+    {
+        ExamConfig c = cfg;
+        c.personalities = {"Alice", "Bob"};
+        c.tidbitCount   = 2;
+        std::vector<QuestionTurn> history;
+        std::string p = BuildScoringAndNextPrompt(c, history, "What is IAM?", "A service.", 3);
+        bool hasAlice = p.find(":::tidbit[Alice]") != std::string::npos;
+        bool hasBob   = p.find(":::tidbit[Bob]")   != std::string::npos;
+        if (!hasAlice || !hasBob) {
+            std::cerr << "FAIL [tidbit-count-2]: alice=" << hasAlice << " bob=" << hasBob << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [tidbit-count-2]\n";
+        }
+    }
+
+    // tidbitCount=1 (default) → only one :::tidbit block in scoring prompt
+    {
+        ExamConfig c = cfg;
+        c.personalities = {"Alice", "Bob", "Carol"};
+        c.tidbitCount   = 1;
+        std::vector<QuestionTurn> history;
+        std::string p = BuildScoringAndNextPrompt(c, history, "What is IAM?", "A service.", 3);
+        size_t count = 0;
+        size_t pos = 0;
+        while ((pos = p.find(":::tidbit[", pos)) != std::string::npos) {
+            ++count;
+            pos += 10;
+        }
+        // format example repeats each block twice (instruction + example), so count >= 2 for n=1
+        bool ok = (count >= 2); // at least instruction + example for the one tidbit
+        if (!ok) {
+            std::cerr << "FAIL [tidbit-count-1-single]: count=" << count << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [tidbit-count-1-single]\n";
+        }
+    }
+
+    // tidbitCount=3 with 3 personalities → all three appear in scoring prompt
+    {
+        ExamConfig c = cfg;
+        c.personalities = {"Alice", "Bob", "Carol"};
+        c.tidbitCount   = 3;
+        std::vector<QuestionTurn> history;
+        std::string p = BuildScoringAndNextPrompt(c, history, "What is IAM?", "A service.", 3);
+        bool hasAlice = p.find(":::tidbit[Alice]") != std::string::npos;
+        bool hasBob   = p.find(":::tidbit[Bob]")   != std::string::npos;
+        bool hasCarol = p.find(":::tidbit[Carol]")  != std::string::npos;
+        if (!hasAlice || !hasBob || !hasCarol) {
+            std::cerr << "FAIL [tidbit-count-3]: alice=" << hasAlice
+                      << " bob=" << hasBob << " carol=" << hasCarol << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [tidbit-count-3]\n";
         }
     }
 

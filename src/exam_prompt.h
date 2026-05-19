@@ -23,6 +23,9 @@ struct ExamConfig {
     bool        useCorpus      = false;      // when true, corpus chunks are retrieved and injected
     bool        largeModel     = false;      // true for cloud backends that handle complex output
     std::vector<std::string> personalities;  // guest commentators injected as :::tidbit blocks
+    int         tidbitCount    = 1;          // how many tidbit blocks per turn (1–10)
+    std::vector<std::string> moreOfTopics;   // topics user wants more questions about
+    std::vector<std::string> lessOfTopics;   // topics user wants fewer questions about
 };
 
 // Build the first prompt: asks LLM to generate question #1.
@@ -56,7 +59,9 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput);
 // chatCounts[i] is the number of chat exchanges for turn i (0 = no chats yet).
 // Each turn gets a hover-highlight and testtaker://flag/N, note/N, discuss/N links.
 std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
-                             const std::vector<int>&          chatCounts);
+                             const std::vector<int>&          chatCounts,
+                             const std::vector<std::string>&  moreOfTopics = {},
+                             const std::vector<std::string>&  lessOfTopics = {});
 
 // A past session displayed in the history section of the Exam tab.
 // sessionFile is needed so interactive toolbar actions (flag, note, discuss, save)

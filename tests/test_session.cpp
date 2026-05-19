@@ -405,5 +405,32 @@ int test_session() {
         fs::remove(tmp);
     }
 
+    // silentSkip round-trips through session save/load
+    {
+        auto tmp = fs::temp_directory_path() / "tt_silent_test.md";
+        { std::ofstream f(tmp); f << "# session\n"; }
+        QuestionTurn t0;
+        t0.question = "What is RAII?"; t0.userAnswer = "Resource mgmt.";
+        t0.score = Score::Star4; t0.silentSkip = false;
+        QuestionTurn t1;
+        t1.question = "What is a vtable?"; t1.userAnswer = "";
+        t1.score = Score::Skipped; t1.silentSkip = true;
+        AppendSessionTurn(tmp.string(), t0);
+        AppendSessionTurn(tmp.string(), t1);
+        auto loaded = LoadSession(tmp.string());
+        bool ok = loaded.size() == 2
+               && !loaded[0].silentSkip
+               && loaded[1].silentSkip;
+        if (!ok) {
+            std::cerr << "FAIL [silent-skip-roundtrip]: size=" << loaded.size()
+                      << " t0.silent=" << loaded[0].silentSkip
+                      << " t1.silent=" << loaded[1].silentSkip << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [silent-skip-roundtrip]\n";
+        }
+        fs::remove(tmp);
+    }
+
     return failures;
 }

@@ -81,12 +81,14 @@ enum {
     ID_NS_START          = wxID_HIGHEST + 300,
     ID_NS_BACKEND,
     ID_NS_OPEN_CONTEXT,
+    ID_NS_RESET_WEIGHTS,
 };
 
 wxBEGIN_EVENT_TABLE(NewSessionPanel, wxPanel)
-    EVT_BUTTON(ID_NS_START,        NewSessionPanel::OnStart)
-    EVT_CHOICE(ID_NS_BACKEND,      NewSessionPanel::OnBackendChanged)
-    EVT_BUTTON(ID_NS_OPEN_CONTEXT, NewSessionPanel::OnOpenContext)
+    EVT_BUTTON(ID_NS_START,          NewSessionPanel::OnStart)
+    EVT_CHOICE(ID_NS_BACKEND,        NewSessionPanel::OnBackendChanged)
+    EVT_BUTTON(ID_NS_OPEN_CONTEXT,   NewSessionPanel::OnOpenContext)
+    EVT_BUTTON(ID_NS_RESET_WEIGHTS,  NewSessionPanel::OnResetWeights)
 wxEND_EVENT_TABLE()
 
 static wxArrayString make_difficulties() {
@@ -176,9 +178,16 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
 
     // ── Focus areas ──────────────────────────────────────────────────────
     {
-        auto* label = new wxStaticText(this, wxID_ANY,
-            "Focus areas — add sub-topics and rate priority (★ = low, ★★★★★ = high):");
-        inner->Add(label, 0, wxBOTTOM, 4);
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(this, wxID_ANY,
+            "Focus areas — add sub-topics and rate priority (★ = low, ★★★★★ = high):"),
+            1, wxALIGN_CENTER_VERTICAL);
+        auto* resetBtn = new wxButton(this, ID_NS_RESET_WEIGHTS,
+            wxString::FromUTF8("\xe2\x86\xba Reset \xf0\x9f\x91\x8d\xf0\x9f\x91\x8e weights"),
+            wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+        resetBtn->SetToolTip("Clear all thumbs-up / thumbs-down topic preferences saved from exams");
+        row->Add(resetBtn, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 8);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
 
         m_focusListPanel = new FocusListPanel(this, 140);
         inner->Add(m_focusListPanel, 0, wxEXPAND | wxBOTTOM, 10);
@@ -186,9 +195,17 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarte
 
     // ── Personality picker ────────────────────────────────────────────────
     {
-        auto* label = new wxStaticText(this, wxID_ANY,
-            "Guest commentators — checked personalities appear as \xf0\x9f\x92\xac tidbits in explanations:");
-        inner->Add(label, 0, wxBOTTOM, 4);
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(this, wxID_ANY,
+            "Guest commentators — checked personalities appear as \xf0\x9f\x92\xac tidbits in explanations:"),
+            1, wxALIGN_CENTER_VERTICAL);
+        row->Add(new wxStaticText(this, wxID_ANY, "Tidbits per turn:"),
+            0, wxALIGN_CENTER_VERTICAL | wxLEFT, 12);
+        m_tidbitCountCtrl = new wxSpinCtrl(this, wxID_ANY, "1",
+            wxDefaultPosition, wxSize(52, -1), wxSP_ARROW_KEYS, 1, 10, 1);
+        m_tidbitCountCtrl->SetToolTip("How many tidbit commentaries to include per explanation (1–10)");
+        row->Add(m_tidbitCountCtrl, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 4);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
 
         m_personalityPanel = new PersonalityPickerPanel(this);
         inner->Add(m_personalityPanel, 0, wxEXPAND | wxBOTTOM, 10);
@@ -385,6 +402,7 @@ void NewSessionPanel::SaveFormState() const {
         pcfg.examApiKey       = m_apiKeyCtrl->GetValue().ToStdString();
         pcfg.examOllamaModel  = m_ollamaModel->GetValue().ToStdString();
         pcfg.personalities    = JoinPipe(m_personalityPanel->GetSelected());
+        pcfg.examTidbitCount  = m_tidbitCountCtrl->GetValue();
         SaveConfig(m_activeProjectDir, pcfg);
     }
 
@@ -411,6 +429,8 @@ void NewSessionPanel::RestoreFormState() {
     }
     if (!pcfg.examFocusAreas.empty())
         m_focusListPanel->SetAreas(DeserializeFocusAreas(pcfg.examFocusAreas));
+    if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
+        m_tidbitCountCtrl->SetValue(pcfg.examTidbitCount);
     if (!pcfg.examApiKey.empty())
         m_apiKeyCtrl->SetValue(wxString::FromUTF8(pcfg.examApiKey));
     if (!pcfg.examOllamaModel.empty())
@@ -471,6 +491,7 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     cfg.totalQuestions = m_countCtrl->GetValue();
     cfg.useCorpus      = m_corpusSizer->IsShown() && m_useCorpusCheck->GetValue();
     cfg.personalities  = m_personalityPanel->GetSelected();
+    cfg.tidbitCount    = m_tidbitCountCtrl->GetValue();
 
     // Load context.md if present
     std::string ctxPath = m_activeProjectDir + "/context.md";
@@ -537,6 +558,16 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     SetStatus("Starting: " + wxString::FromUTF8(cfg.topic));
 
     if (m_onStart) m_onStart(m_activeProjectDir, sessionFile, cfg, llmCfg);
+}
+
+// ---------------------------------------------------------------------------
+void NewSessionPanel::OnResetWeights(wxCommandEvent&) {
+    if (m_activeProjectDir.empty()) return;
+    ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
+    pcfg.examMoreOf.clear();
+    pcfg.examLessOf.clear();
+    SaveConfig(m_activeProjectDir, pcfg);
+    SetStatus("Topic weights cleared.");
 }
 
 // ---------------------------------------------------------------------------

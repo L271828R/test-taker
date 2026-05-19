@@ -14,6 +14,9 @@ struct ProjectConfig {
     std::string examTopic;
     std::string examInstructions;
     std::string examFocusAreas;   // "stars@@text|stars@@text|..."
+    std::string examMoreOf;       // pipe-separated topic snippets user wants more of
+    std::string examLessOf;       // pipe-separated topic snippets user wants less of
+    int         examTidbitCount = 1; // tidbits per explanation turn (1–10)
     std::string examBackend;
     std::string examApiKey;
     std::string examOllamaModel;

@@ -11,6 +11,7 @@ struct QuestionTurn {
     std::string explanation;
     bool        flagged     = false;
     bool        saved       = false;
+    bool        silentSkip  = false;
     std::string note;
 };
 

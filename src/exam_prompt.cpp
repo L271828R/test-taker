@@ -24,6 +24,26 @@ std::string PickFocusArea(const std::vector<FocusArea>& areas) {
     return areas.back().text;
 }
 
+static void AppendTopicWeights(std::ostringstream& out, const ExamConfig& cfg) {
+    if (!cfg.moreOfTopics.empty()) {
+        out << "Explore more of these topics: ";
+        for (size_t i = 0; i < cfg.moreOfTopics.size(); ++i) {
+            if (i) out << ", ";
+            out << cfg.moreOfTopics[i];
+        }
+        out << "\n";
+    }
+    if (!cfg.lessOfTopics.empty()) {
+        out << "Reduce questions about: ";
+        for (size_t i = 0; i < cfg.lessOfTopics.size(); ++i) {
+            if (i) out << ", ";
+            out << cfg.lessOfTopics[i];
+        }
+        out << "\n";
+    }
+    if (!cfg.moreOfTopics.empty() || !cfg.lessOfTopics.empty()) out << "\n";
+}
+
 // ---------------------------------------------------------------------------
 std::string BuildFirstQuestionPrompt(const ExamConfig& cfg) {
     std::ostringstream out;
@@ -38,6 +58,8 @@ std::string BuildFirstQuestionPrompt(const ExamConfig& cfg) {
         out << "Focus areas (prioritise questions on these sub-topics): "
             << cfg.focusAreas << "\n\n";
     }
+
+    AppendTopicWeights(out, cfg);
 
     if (!cfg.projectContext.empty()) {
         out << "Study material (use this to calibrate question relevance):\n\n"
@@ -80,19 +102,26 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
             << cfg.focusAreas << "\n\n";
     }
 
+    AppendTopicWeights(out, cfg);
+
     if (!cfg.projectContext.empty()) {
         out << "Study material:\n\n" << cfg.projectContext << "\n\n";
     }
 
     if (!history.empty()) {
-        out << "Session history so far:\n\n";
-        for (const auto& t : history) {
-            out << "Q: " << t.question << "\n";
-            if (t.userAnswer.empty())
-                out << "User: (none)\n";
-            else
-                out << "User: " << t.userAnswer << "\n";
-            out << "SCORE: " << ScoreToString(t.score) << "\n\n";
+        bool anyVisible = false;
+        for (const auto& t : history) if (!t.silentSkip) { anyVisible = true; break; }
+        if (anyVisible) {
+            out << "Session history so far:\n\n";
+            for (const auto& t : history) {
+                if (t.silentSkip) continue;
+                out << "Q: " << t.question << "\n";
+                if (t.userAnswer.empty())
+                    out << "User: (none)\n";
+                else
+                    out << "User: " << t.userAnswer << "\n";
+                out << "SCORE: " << ScoreToString(t.score) << "\n\n";
+            }
         }
     }
 
@@ -104,26 +133,39 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
           " after the explanation text."
         : "";
 
-    // Build the personality tidbit instruction if personalities are configured.
+    // Pick one personality at random and bake it into the instruction.
+    // Giving the LLM a list and asking it to "pick one" causes it to always
+    // Pick up to tidbitCount distinct personalities for this turn.
     std::string tidbitInstruction;
     std::string tidbitFormatExample;
     if (!cfg.personalities.empty()) {
-        std::string nameList;
-        for (const auto& p : cfg.personalities) {
-            if (!nameList.empty()) nameList += ", ";
-            nameList += p;
+        static std::mt19937 rng(std::random_device{}());
+        std::vector<std::string> pool = cfg.personalities;
+        std::shuffle(pool.begin(), pool.end(), rng);
+        int n = std::max(1, std::min(cfg.tidbitCount, (int)pool.size()));
+        pool.resize(n);
+
+        for (const auto& p : pool) {
+            tidbitFormatExample +=
+                ":::tidbit[" + p + "]\n"
+                "<comment>\n"
+                ":::\n";
         }
-        tidbitInstruction =
-            " After the explanation, on a new line add a :::tidbit[Name] block"
-            " — pick one of: " + nameList + " — using their characteristic voice"
-            " for a brief insight (1-3 sentences). Format exactly:\n"
-            ":::tidbit[Name]\n"
-            "<comment>\n"
-            ":::";
-        tidbitFormatExample =
-            ":::tidbit[Name]\n"
-            "<comment>\n"
-            ":::\n";
+        if (n == 1) {
+            const std::string& p = pool[0];
+            tidbitInstruction =
+                " After the explanation, on a new line add a :::tidbit[" + p + "] block"
+                " in " + p + "'s characteristic voice"
+                " for a brief insight (1-3 sentences). Format exactly:\n"
+                ":::tidbit[" + p + "]\n"
+                "<comment>\n"
+                ":::";
+        } else {
+            tidbitInstruction =
+                " After the explanation, add " + std::to_string(n) +
+                " tidbit blocks, each in the named character's voice (1-3 sentences each)."
+                " Format exactly:\n" + tidbitFormatExample;
+        }
     }
 
     if (userAnswer.empty()) {
@@ -243,7 +285,9 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput) {
 
 // ---------------------------------------------------------------------------
 std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
-                             const std::vector<int>&          chatCounts) {
+                             const std::vector<int>&          chatCounts,
+                             const std::vector<std::string>&  moreOfTopics,
+                             const std::vector<std::string>&  lessOfTopics) {
     std::ostringstream out;
 
     out << R"(<style>
@@ -256,7 +300,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn:hover .note-btn { opacity:1; }
 .turn:hover .discuss-btn { opacity:1; }
 .turn:hover .save-btn { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn, .save-btn {
+.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn {
             opacity:0; transition:opacity 0.15s;
             background:none; border:1px solid var(--border);
             border-radius:4px; padding:0.15em 0.5em;
@@ -266,6 +310,10 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .note-btn.has-note { color:var(--link); border-color:var(--link); opacity:1; }
 .discuss-btn.has-chat { color:var(--link); border-color:var(--link); opacity:1; }
 .save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
+.more-btn.voted { color:#1a7f37; border-color:#1a7f37; opacity:1; }
+.less-btn.voted { color:#cf222e; border-color:#cf222e; opacity:1; }
+.turn:hover .more-btn { opacity:1; }
+.turn:hover .less-btn { opacity:1; }
 .turn-note { margin-top:0.5em; padding:0.4em 0.6em;
              background:var(--surface); border-left:3px solid var(--link);
              font-size:0.9em; color:var(--text-muted); white-space:pre-wrap; }
@@ -283,12 +331,26 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .verdict.s4 { background:#2da44e; color:#fff; }
 .verdict.s5 { background:#1a7f37; color:#fff; }
 .verdict.skipped { background:#57606a; color:#fff; }
+.verdict.silent  { background:#57606a; color:#fff; opacity:0.6; }
 .explanation { font-size:.95em; }
 </style>
 )";
 
+    auto makeSnippet = [](const std::string& q) -> std::string {
+        std::string s = q.substr(0, 80);
+        auto nl = s.find('\n');
+        if (nl != std::string::npos) s = s.substr(0, nl);
+        if (s.size() > 60) s = s.substr(0, 57) + "...";
+        return s;
+    };
+    auto inList = [](const std::vector<std::string>& list, const std::string& item) {
+        for (const auto& e : list) if (e == item) return true;
+        return false;
+    };
+
     for (int i = 0; i < (int)turns.size(); ++i) {
         const auto& t = turns[i];
+        std::string snippet = makeSnippet(t.question);
         std::string scoreClass =
             t.score == Score::Skipped ? "skipped" : "s" + ScoreToString(t.score);
         std::string flagClass = t.flagged ? " flagged" : "";
@@ -302,9 +364,15 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
             : "&#x1F4AC; discuss";
         std::string saveClass = t.saved ? " saved" : "";
         std::string saveLabel = t.saved ? "&#x1F516; saved" : "&#x1F516; save";
+        std::string moreClass = inList(moreOfTopics, snippet) ? " voted" : "";
+        std::string lessClass = inList(lessOfTopics, snippet) ? " voted" : "";
 
         out << "<div class='turn'>"
             << "<div class='turn-toolbar'>"
+            << "<a class='more-btn" << moreClass << "' href='testtaker://more/"
+            << i << "'>&#x1F44D;</a>"
+            << "<a class='less-btn" << lessClass << "' href='testtaker://less/"
+            << i << "'>&#x1F44E;</a>"
             << "<a class='discuss-btn" << discussClass << "' href='testtaker://discuss/"
             << i << "'>" << discussLabel << "</a>"
             << "<a class='note-btn" << noteClass << "' href='testtaker://note/"
@@ -314,17 +382,21 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
             << "<a class='flag-btn" << flagClass << "' href='testtaker://flag/"
             << i << "'>" << flagLabel << "</a>"
             << "</div>"
-            << "<div class='question'>" << RenderMarkdown(t.question) << "</div>"
-            << "<div class='answer'>"
-            << "<span class='answer-label'>Your answer:</span>"
-            << "<div class='answer-body'>"
-            << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
-            << "</div></div>"
-            << "<div class='verdict " << scoreClass << "'>"
-            << ScoreLabel(t.score) << "</div>"
-            << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>";
-        if (!t.note.empty())
-            out << "<div class='turn-note'>" << EscapeHTML(t.note) << "</div>";
+            << "<div class='question'>" << RenderMarkdown(t.question) << "</div>";
+        if (t.silentSkip) {
+            out << "<div class='verdict silent'>&#x23ED; silently skipped</div>";
+        } else {
+            out << "<div class='answer'>"
+                << "<span class='answer-label'>Your answer:</span>"
+                << "<div class='answer-body'>"
+                << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
+                << "</div></div>"
+                << "<div class='verdict " << scoreClass << "'>"
+                << ScoreLabel(t.score) << "</div>"
+                << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>";
+            if (!t.note.empty())
+                out << "<div class='turn-note'>" << EscapeHTML(t.note) << "</div>";
+        }
         out << "</div>\n";
     }
 
