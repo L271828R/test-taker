@@ -21,6 +21,7 @@ private:
     void OnAdd();
     void OnAddURL();
     void OnAddClipboard();
+    void OnAddGit();
     void OnDelete();
     void OnOpen(wxListEvent& e);
     void RefreshList();
@@ -42,5 +43,6 @@ private:
     wxButton*     m_addBtn    = nullptr;
     wxButton*     m_urlBtn    = nullptr;
     wxButton*     m_clipBtn   = nullptr;
+    wxButton*     m_gitBtn    = nullptr;
     wxButton*     m_delBtn    = nullptr;
 };

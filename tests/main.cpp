@@ -23,6 +23,7 @@ int test_exam_prompt();
 int test_turn_chat();
 int test_corpus();
 int test_web_fetch();
+int test_git_import();
 int test_saved_convos();
 
 int main() {
@@ -47,6 +48,7 @@ int main() {
     failures += test_turn_chat();
     failures += test_corpus();
     failures += test_web_fetch();
+    failures += test_git_import();
     failures += test_saved_convos();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;

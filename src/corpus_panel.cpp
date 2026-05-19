@@ -1,11 +1,13 @@
 #include "corpus_panel.h"
 #include "embeddings.h"
+#include "git_import.h"
 #include "web_fetch.h"
 #include <wx/clipbrd.h>
 #include <wx/filedlg.h>
 #include <wx/textdlg.h>
 #include <filesystem>
 #include <fstream>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -32,11 +34,13 @@ CorpusPanel::CorpusPanel(wxWindow* parent)
     m_addBtn  = new wxButton(this, wxID_ANY, "Add File…");
     m_urlBtn  = new wxButton(this, wxID_ANY, "Add URL…");
     m_clipBtn = new wxButton(this, wxID_ANY, "Add Clipboard");
+    m_gitBtn  = new wxButton(this, wxID_ANY, "Add from Git…");
     m_delBtn  = new wxButton(this, wxID_ANY, "Delete");
     m_delBtn->Disable();
     btnRow->Add(m_addBtn,  0, wxRIGHT, 6);
     btnRow->Add(m_urlBtn,  0, wxRIGHT, 6);
     btnRow->Add(m_clipBtn, 0, wxRIGHT, 6);
+    btnRow->Add(m_gitBtn,  0, wxRIGHT, 6);
     btnRow->Add(m_delBtn);
     top->Add(btnRow, 0, wxLEFT | wxRIGHT | wxBOTTOM, 8);
 
@@ -48,6 +52,7 @@ CorpusPanel::CorpusPanel(wxWindow* parent)
     m_addBtn->Bind( wxEVT_BUTTON, [this](wxCommandEvent&){ OnAdd(); });
     m_urlBtn->Bind( wxEVT_BUTTON, [this](wxCommandEvent&){ OnAddURL(); });
     m_clipBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&){ OnAddClipboard(); });
+    m_gitBtn->Bind( wxEVT_BUTTON, [this](wxCommandEvent&){ OnAddGit(); });
     m_delBtn->Bind( wxEVT_BUTTON, [this](wxCommandEvent&){ OnDelete(); });
 
     m_list->Bind(wxEVT_LIST_ITEM_SELECTED,   [this](wxListEvent&){ m_delBtn->Enable(); });
@@ -75,6 +80,7 @@ void CorpusPanel::SyncProject(const std::string& projectDir, const std::string& 
         m_addBtn->Disable();
         m_urlBtn->Disable();
         m_clipBtn->Disable();
+        m_gitBtn->Disable();
         return;
     }
 
@@ -88,6 +94,7 @@ void CorpusPanel::SyncProject(const std::string& projectDir, const std::string& 
     m_addBtn->Enable();
     m_urlBtn->Enable();
     m_clipBtn->Enable();
+    m_gitBtn->Enable();
     RefreshList();
     SetStatus("Ready.");
 }
@@ -323,6 +330,208 @@ void CorpusPanel::OnAddClipboard() {
         name += ".txt";
 
     ProcessText(name, text);
+}
+
+// ---------------------------------------------------------------------------
+void CorpusPanel::OnAddGit() {
+    if (!m_corpus) { SetStatus("Open a project first."); return; }
+
+    // ── Dialog ───────────────────────────────────────────────────────────────
+    wxDialog dlg(this, wxID_ANY, "Add from Git Repository",
+                 wxDefaultPosition, wxSize(560, 310));
+    auto* outer = new wxBoxSizer(wxVERTICAL);
+    auto* grid  = new wxFlexGridSizer(4, 2, 8, 8);
+    grid->AddGrowableCol(1, 1);
+
+    auto addRow = [&](const wxString& label, wxTextCtrl*& ctrl,
+                      const wxString& value, const wxString& hint) {
+        grid->Add(new wxStaticText(&dlg, wxID_ANY, label),
+                  0, wxALIGN_CENTER_VERTICAL);
+        ctrl = new wxTextCtrl(&dlg, wxID_ANY, value);
+        ctrl->SetHint(hint);
+        grid->Add(ctrl, 1, wxEXPAND);
+    };
+
+    wxTextCtrl *urlCtrl, *branchCtrl, *subdirCtrl, *extCtrl;
+    addRow("Repo URL:",    urlCtrl,    "",      "https://github.com/owner/repo");
+    addRow("Branch:",      branchCtrl, "main",  "main");
+    addRow("Subdirectory:", subdirCtrl, "",     "e.g. googletest/samples  (empty = all)");
+    addRow("Extensions:",  extCtrl,    ".cc .cpp .h .md .txt",
+           "space-separated, e.g.  .cc .h  (empty = all files)");
+
+    auto* note = new wxStaticText(&dlg, wxID_ANY,
+        "Paste a GitHub tree URL and the fields will be filled automatically.");
+    note->Wrap(520);
+
+    // Auto-fill when a GitHub tree URL is pasted into the URL field.
+    urlCtrl->Bind(wxEVT_TEXT, [&](wxCommandEvent&) {
+        auto info = ParseGitHubTreeURL(urlCtrl->GetValue().ToStdString());
+        if (!info.repoUrl.empty()) {
+            urlCtrl->ChangeValue(wxString::FromUTF8(info.repoUrl));
+            branchCtrl->ChangeValue(wxString::FromUTF8(
+                info.branch.empty() ? "main" : info.branch));
+            subdirCtrl->ChangeValue(wxString::FromUTF8(info.subDir));
+        }
+    });
+
+    auto* btns = dlg.CreateButtonSizer(wxOK | wxCANCEL);
+    outer->Add(note, 0, wxALL, 10);
+    outer->Add(grid, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, 10);
+    outer->Add(btns, 0, wxEXPAND | wxALL, 10);
+    dlg.SetSizer(outer);
+    dlg.Layout();
+
+    if (dlg.ShowModal() != wxID_OK) return;
+
+    std::string url    = urlCtrl->GetValue().Trim().ToStdString();
+    std::string branch = branchCtrl->GetValue().Trim().ToStdString();
+    std::string subdir = subdirCtrl->GetValue().Trim().ToStdString();
+    std::string extStr = extCtrl->GetValue().Trim().ToStdString();
+
+    if (url.empty()) return;
+
+    // Parse extension list.
+    std::vector<std::string> exts;
+    {
+        std::string tok;
+        for (char c : extStr + " ") {
+            if (c == ' ' || c == ',') {
+                if (!tok.empty()) { exts.push_back(tok); tok.clear(); }
+            } else {
+                tok += c;
+            }
+        }
+    }
+
+    // Derive a corpus subdir name from the repo basename.
+    std::string repoName = fs::path(url).filename().string();
+    if (repoName.empty() || repoName == ".") repoName = "repo";
+
+    // ── Clone + import in background ─────────────────────────────────────────
+    m_addBtn->Disable(); m_urlBtn->Disable();
+    m_clipBtn->Disable(); m_gitBtn->Disable();
+    SetStatus("Cloning " + url + " …");
+
+    auto cancel     = m_cancel;
+    std::string projectDir = m_projectDir;
+    std::string ollamaUrl  = m_ollamaUrl;
+    std::string dbPath     = projectDir + "/corpus.db";
+
+    if (m_worker.joinable()) m_worker.detach();
+    m_worker = std::thread([=]() {
+        // Clone into a temp directory.
+        fs::path tmpBase = fs::temp_directory_path()
+                         / ("tt-clone-" + std::to_string(getpid()));
+        fs::path cloneDir = tmpBase / repoName;
+        fs::remove_all(tmpBase);
+
+        std::string cloneErr;
+        bool ok = GitClone(url, branch, cloneDir.string(), cloneErr);
+        if (!ok) {
+            if (!*cancel) wxTheApp->CallAfter([=](){
+                if (!*cancel) {
+                    SetStatus("Clone failed: " + cloneErr);
+                    m_addBtn->Enable(); m_urlBtn->Enable();
+                    m_clipBtn->Enable(); m_gitBtn->Enable();
+                }
+            });
+            fs::remove_all(tmpBase);
+            return;
+        }
+
+        // Narrow to the requested subdirectory.
+        fs::path scanDir = subdir.empty() ? cloneDir : cloneDir / subdir;
+        if (!fs::exists(scanDir)) {
+            if (!*cancel) wxTheApp->CallAfter([=](){
+                if (!*cancel) {
+                    SetStatus("Subdirectory not found in clone: " + subdir);
+                    m_addBtn->Enable(); m_urlBtn->Enable();
+                    m_clipBtn->Enable(); m_gitBtn->Enable();
+                }
+            });
+            fs::remove_all(tmpBase);
+            return;
+        }
+
+        auto files = CollectFiles(scanDir.string(), exts);
+        if (files.empty()) {
+            if (!*cancel) wxTheApp->CallAfter([=](){
+                if (!*cancel) {
+                    SetStatus("No matching files found in " + scanDir.string());
+                    m_addBtn->Enable(); m_urlBtn->Enable();
+                    m_clipBtn->Enable(); m_gitBtn->Enable();
+                }
+            });
+            fs::remove_all(tmpBase);
+            return;
+        }
+
+        // Copy files into <projectDir>/corpus/<repoName>/ and embed each one.
+        fs::path destBase = fs::path(projectDir) / "corpus" / repoName;
+        fs::create_directories(destBase);
+
+        Corpus bg(dbPath);
+        std::string bgErr;
+        if (!bg.Open(bgErr)) {
+            fs::remove_all(tmpBase);
+            return;
+        }
+
+        int filesDone = 0;
+        int totalFiles = static_cast<int>(files.size());
+
+        for (const auto& srcPath : files) {
+            if (*cancel) break;
+
+            // Preserve relative path within the scan dir.
+            fs::path rel = fs::relative(srcPath, scanDir);
+            fs::path dest = destBase / rel;
+            fs::create_directories(dest.parent_path());
+
+            std::error_code ec;
+            fs::copy_file(srcPath, dest, fs::copy_options::overwrite_existing, ec);
+            if (ec) continue;
+
+            // Read text.
+            std::string text;
+            {
+                std::ifstream f(dest.string());
+                text.assign(std::istreambuf_iterator<char>(f), {});
+            }
+            if (text.empty()) continue;
+
+            std::string docName = rel.string();
+            int docId = bg.AddDocument(docName, dest.string(), bgErr);
+            if (docId < 0) continue;
+
+            ++filesDone;
+            if (!*cancel) wxTheApp->CallAfter([=](){
+                if (!*cancel) {
+                    SetStatus("Importing file " + std::to_string(filesDone)
+                              + "/" + std::to_string(totalFiles) + ": " + docName);
+                }
+            });
+
+            auto chunks = ChunkText(text, 350, 50);
+            for (int i = 0; i < (int)chunks.size() && !*cancel; ++i) {
+                if (!IsUsefulChunk(chunks[i])) continue;
+                auto emb = EmbedText(chunks[i], ollamaUrl);
+                if (emb.ok) bg.AddChunk(docId, i, chunks[i], emb.embedding, bgErr);
+            }
+        }
+
+        fs::remove_all(tmpBase);
+
+        if (!*cancel) wxTheApp->CallAfter([=](){
+            if (!*cancel) {
+                RefreshList();
+                SetStatus("Done — imported " + std::to_string(filesDone)
+                          + " files from " + repoName);
+                m_addBtn->Enable(); m_urlBtn->Enable();
+                m_clipBtn->Enable(); m_gitBtn->Enable();
+            }
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------
