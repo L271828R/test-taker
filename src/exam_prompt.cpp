@@ -540,9 +540,10 @@ std::string BuildGameSeriesPrompt(const std::string& question,
     }
     out << "Generate " << count << " different follow-up questions that test related aspects "
         << "of the same topic. Each question should probe a different angle.\n\n"
-        << "For each question output EXACTLY two lines then a separator:\n"
-        << "CORRECT: <a true statement, under 80 chars>\n"
-        << "WRONG: <a plausible but false statement, under 80 chars>\n"
+        << "For each question output EXACTLY three lines then a separator:\n"
+        << "QUESTION: <a short question testing a related concept, under 100 chars>\n"
+        << "CORRECT: <a true statement that answers the question, under 80 chars>\n"
+        << "WRONG: <a plausible but false statement about the same concept, under 80 chars>\n"
         << "---\n\n"
         << "Output ONLY those lines. No numbering, no extra text. "
         << "The last block does not need a trailing ---.";

@@ -908,20 +908,21 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                     Logger::get().log("Game series LLM failed: " + result.error);
                     return;
                 }
-                auto pairs = ParseMultipleGameChoices(result.text);
-                if (pairs.empty()) {
+                auto blocks = ParseMultipleGameChoices(result.text);
+                if (blocks.empty()) {
                     Logger::get().log("Game series parse failed: " + result.text.substr(0, 200));
                     return;
                 }
 
-                auto makeQuestions = [&](const std::vector<std::pair<std::string,std::string>>& p) {
+                auto makeQuestions = [&](const std::vector<GameQuestionBlock>& bl,
+                                         const std::string& fallbackQ) {
                     std::vector<GameData> out;
-                    for (auto& [correct, wrong] : p) {
+                    for (auto& b : bl) {
                         bool cia = (std::rand() % 2 == 0);
                         GameData gd;
-                        gd.question   = question;
-                        gd.choiceA    = cia ? correct : wrong;
-                        gd.choiceB    = cia ? wrong   : correct;
+                        gd.question   = b.question.empty() ? fallbackQ : b.question;
+                        gd.choiceA    = cia ? b.correct : b.wrong;
+                        gd.choiceB    = cia ? b.wrong   : b.correct;
                         gd.correctIsA = cia;
                         out.push_back(gd);
                     }
@@ -929,7 +930,7 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                 };
 
                 wxString tmpPath = wxFileName::CreateTempFileName("tt-game") + ".dat";
-                if (!WriteGameFiles(tmpPath.ToStdString(), makeQuestions(pairs))) {
+                if (!WriteGameFiles(tmpPath.ToStdString(), makeQuestions(blocks, question))) {
                     Logger::get().log("Could not write game data file");
                     return;
                 }
@@ -953,15 +954,15 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                     LLMResult r2 = InvokeLLM(
                         BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
                     if (!r2.ok) return;
-                    auto p2 = ParseMultipleGameChoices(r2.text);
-                    if (p2.empty()) return;
+                    auto b2 = ParseMultipleGameChoices(r2.text);
+                    if (b2.empty()) return;
                     std::vector<GameData> more;
-                    for (auto& [correct, wrong] : p2) {
+                    for (auto& b : b2) {
                         bool cia = (std::rand() % 2 == 0);
                         GameData gd;
-                        gd.question   = question;
-                        gd.choiceA    = cia ? correct : wrong;
-                        gd.choiceB    = cia ? wrong   : correct;
+                        gd.question   = b.question.empty() ? question : b.question;
+                        gd.choiceA    = cia ? b.correct : b.wrong;
+                        gd.choiceB    = cia ? b.wrong   : b.correct;
                         gd.correctIsA = cia;
                         more.push_back(gd);
                     }

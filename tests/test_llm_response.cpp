@@ -222,17 +222,39 @@ int test_llm_response() {
         std::string raw =
             "CORRECT: Answer one.\nWRONG: Wrong one.\n---\n"
             "CORRECT: Answer two.\nWRONG: Wrong two.";
-        auto pairs = ParseMultipleGameChoices(raw);
-        bool ok = pairs.size() == 2
-               && pairs[0].first  == "Answer one."
-               && pairs[0].second == "Wrong one."
-               && pairs[1].first  == "Answer two."
-               && pairs[1].second == "Wrong two.";
+        auto blocks = ParseMultipleGameChoices(raw);
+        bool ok = blocks.size() == 2
+               && blocks[0].correct == "Answer one."
+               && blocks[0].wrong   == "Wrong one."
+               && blocks[1].correct == "Answer two."
+               && blocks[1].wrong   == "Wrong two.";
         if (!ok) {
-            std::cerr << "FAIL [parse-multi-game-choices-two]: got " << pairs.size() << " pairs\n";
+            std::cerr << "FAIL [parse-multi-game-choices-two]: got " << blocks.size() << " blocks\n";
             ++failures;
         } else {
             std::cout << "PASS [parse-multi-game-choices-two]\n";
+        }
+    }
+
+    // QUESTION field is parsed and stored per block
+    {
+        std::string raw =
+            "QUESTION: What is RAII?\nCORRECT: Resource Acquisition Is Initialization.\nWRONG: A loop pattern.\n---\n"
+            "QUESTION: When does RAII release?\nCORRECT: On destructor exit.\nWRONG: On function entry.";
+        auto blocks = ParseMultipleGameChoices(raw);
+        bool ok = blocks.size() == 2
+               && blocks[0].question == "What is RAII?"
+               && blocks[0].correct  == "Resource Acquisition Is Initialization."
+               && blocks[0].wrong    == "A loop pattern."
+               && blocks[1].question == "When does RAII release?"
+               && blocks[1].correct  == "On destructor exit."
+               && blocks[1].wrong    == "On function entry.";
+        if (!ok) {
+            std::cerr << "FAIL [parse-multi-game-choices-question]: got " << blocks.size() << " blocks"
+                      << " q0='" << (blocks.empty() ? "" : blocks[0].question) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-multi-game-choices-question]\n";
         }
     }
 
@@ -241,10 +263,10 @@ int test_llm_response() {
         std::string raw =
             "CORRECT: Good.\nWRONG: Bad.\n---\n"
             "CORRECT: Only correct, no wrong.";
-        auto pairs = ParseMultipleGameChoices(raw);
-        bool ok = pairs.size() == 1 && pairs[0].first == "Good.";
+        auto blocks = ParseMultipleGameChoices(raw);
+        bool ok = blocks.size() == 1 && blocks[0].correct == "Good.";
         if (!ok) {
-            std::cerr << "FAIL [parse-multi-game-choices-skip-incomplete]: got " << pairs.size() << "\n";
+            std::cerr << "FAIL [parse-multi-game-choices-skip-incomplete]: got " << blocks.size() << "\n";
             ++failures;
         } else {
             std::cout << "PASS [parse-multi-game-choices-skip-incomplete]\n";
@@ -253,8 +275,8 @@ int test_llm_response() {
 
     // Empty → empty vector
     {
-        auto pairs = ParseMultipleGameChoices("");
-        bool ok = pairs.empty();
+        auto blocks = ParseMultipleGameChoices("");
+        bool ok = blocks.empty();
         if (!ok) {
             std::cerr << "FAIL [parse-multi-game-choices-empty]\n";
             ++failures;

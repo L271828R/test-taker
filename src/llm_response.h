@@ -18,7 +18,14 @@ std::vector<std::string> ParseOllamaTags(const std::string& json);
 // Returns {correct, wrong}. Returns {"", ""} if either line is missing.
 std::pair<std::string, std::string> ParseGameChoices(const std::string& response);
 
-// Parses multiple CORRECT/WRONG pairs separated by "---" lines.
+// One parsed block from a multi-question LLM response.
+struct GameQuestionBlock {
+    std::string question;
+    std::string correct;
+    std::string wrong;
+};
+
+// Parses multiple QUESTION/CORRECT/WRONG blocks separated by "---" lines.
 // Incomplete blocks (missing CORRECT or WRONG) are silently dropped.
-std::vector<std::pair<std::string,std::string>>
+std::vector<GameQuestionBlock>
     ParseMultipleGameChoices(const std::string& response);
