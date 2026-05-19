@@ -270,6 +270,42 @@ int test_project() {
         fs::remove_all(base);
     }
 
+    // ProjectConfig exam form state roundtrips through SaveConfig/LoadConfig.
+    {
+        auto base = make_temp_dir();
+        CreateProject(base.string(), "exam-state-test");
+        std::string proj = (base / "exam-state-test").string();
+
+        ProjectConfig cfg;
+        cfg.name             = "exam-state-test";
+        cfg.examTopic        = "AWS Security";
+        cfg.examInstructions = "Focus on IAM policies";
+        cfg.examFocusAreas   = "5@@IAM|3@@S3";
+        cfg.examBackend      = "Anthropic API";
+        cfg.examApiKey       = "sk-ant-test";
+        cfg.examOllamaModel  = "llama3";
+        cfg.lastSession      = "session_20260518_103000.md";
+        SaveConfig(proj, cfg);
+
+        ProjectConfig loaded = LoadConfig(proj);
+        bool ok = loaded.examTopic        == "AWS Security"
+               && loaded.examInstructions == "Focus on IAM policies"
+               && loaded.examFocusAreas   == "5@@IAM|3@@S3"
+               && loaded.examBackend      == "Anthropic API"
+               && loaded.examApiKey       == "sk-ant-test"
+               && loaded.examOllamaModel  == "llama3"
+               && loaded.lastSession      == "session_20260518_103000.md";
+        if (!ok) {
+            std::cerr << "FAIL [project-config-exam-state]:"
+                      << " topic='" << loaded.examTopic << "'"
+                      << " lastSession='" << loaded.lastSession << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [project-config-exam-state]\n";
+        }
+        fs::remove_all(base);
+    }
+
     // DefaultPersonalityLibrary has the expected four categories with characters.
     {
         auto lib = DefaultPersonalityLibrary();

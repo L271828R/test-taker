@@ -1,5 +1,6 @@
 #include "review_panel.h"
 #include <filesystem>
+#include <numeric>
 #include <wx/splitter.h>
 #include <wx/menu.h>
 
@@ -75,26 +76,37 @@ void ReviewPanel::LoadSessionList() {
     if (m_projectDir.empty()) return;
 
     auto meta = LoadExamMeta(m_projectDir);
-    int total = 0, correct = 0, flagged = 0;
+    int total = 0, totalStars = 0, flagged = 0;
 
     for (int i = (int)meta.sessions.size() - 1; i >= 0; --i) {
         const auto& s = meta.sessions[i];
+        int rated = s.totalQuestions - s.skipped;
+        std::string avgLabel = (rated > 0)
+            ? std::to_string(s.totalStars / rated) + "." +
+              std::to_string((s.totalStars * 10 / rated) % 10) + "\xe2\x98\x85"  // ★
+            : "—";
         long row = m_sessionList->InsertItem(
             m_sessionList->GetItemCount(), s.startedAt.substr(0, 16));
         m_sessionList->SetItem(row, 1, s.topic);
-        m_sessionList->SetItem(row, 2,
-            std::to_string(s.correct) + "/" + std::to_string(s.totalQuestions));
+        m_sessionList->SetItem(row, 2, wxString::FromUTF8(avgLabel));
         m_sessionList->SetItem(row, 3, s.difficulty);
         m_sessionList->SetItem(row, 4, std::to_string(s.flaggedCount));
         m_sessionRecords.push_back(s);
-        total   += s.totalQuestions;
-        correct += s.correct;
-        flagged += s.flaggedCount;
+        total      += s.totalQuestions;
+        totalStars += s.totalStars;
+        flagged    += s.flaggedCount;
     }
 
+    int totalRated = total - (int)std::accumulate(
+        meta.sessions.begin(), meta.sessions.end(), 0,
+        [](int a, const SessionRecord& s){ return a + s.skipped; });
+    std::string overallAvg = (totalRated > 0)
+        ? std::to_string(totalStars / totalRated) + "." +
+          std::to_string((totalStars * 10 / totalRated) % 10) + "\xe2\x98\x85"
+        : "—";
     m_summaryLabel->SetLabel(
-        std::to_string(meta.sessions.size()) + " sessions  |  "
-        + std::to_string(correct) + "/" + std::to_string(total) + " correct overall  |  "
+        std::to_string(meta.sessions.size()) + " sessions  |  avg "
+        + wxString::FromUTF8(overallAvg).ToStdString() + "/5 overall  |  "
         + std::to_string(flagged) + " flagged for review");
 }
 

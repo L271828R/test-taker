@@ -76,6 +76,7 @@ private:
     std::set<std::string> m_expandedPaths;   // paths whose folder nodes are expanded
     wxTreeItemId          m_dragItem;        // item being dragged
     OpenCallback          m_openCallback;
+    bool                  m_startupDone = false; // auto-activate fires only once at startup
 
     wxDECLARE_EVENT_TABLE();
 };

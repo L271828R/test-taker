@@ -9,16 +9,20 @@ namespace fs = std::filesystem;
 int test_session() {
     int failures = 0;
 
-    // ScoreFromString / ScoreToString roundtrip
+    // ScoreFromString / ScoreToString roundtrip for 5-star system
     {
-        bool ok = ScoreFromString("correct") == Score::Correct
-               && ScoreFromString("partial") == Score::Partial
-               && ScoreFromString("missed")  == Score::Missed
+        bool ok = ScoreFromString("1") == Score::Star1
+               && ScoreFromString("2") == Score::Star2
+               && ScoreFromString("3") == Score::Star3
+               && ScoreFromString("4") == Score::Star4
+               && ScoreFromString("5") == Score::Star5
                && ScoreFromString("skipped") == Score::Skipped
                && ScoreFromString("garbage") == Score::Skipped
-               && ScoreToString(Score::Correct) == "correct"
-               && ScoreToString(Score::Partial) == "partial"
-               && ScoreToString(Score::Missed)  == "missed"
+               && ScoreToString(Score::Star1)   == "1"
+               && ScoreToString(Score::Star2)   == "2"
+               && ScoreToString(Score::Star3)   == "3"
+               && ScoreToString(Score::Star4)   == "4"
+               && ScoreToString(Score::Star5)   == "5"
                && ScoreToString(Score::Skipped) == "skipped";
         if (!ok) {
             std::cerr << "FAIL [score-roundtrip]\n";
@@ -28,12 +32,39 @@ int test_session() {
         }
     }
 
+    // ScoreFromString backward compatibility with old session files
+    {
+        bool ok = ScoreFromString("correct") == Score::Star5
+               && ScoreFromString("partial") == Score::Star3
+               && ScoreFromString("missed")  == Score::Star1;
+        if (!ok) {
+            std::cerr << "FAIL [score-backcompat]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [score-backcompat]\n";
+        }
+    }
+
+    // ScoreLabel returns star glyphs
+    {
+        bool ok = ScoreLabel(Score::Star1) == "★☆☆☆☆"
+               && ScoreLabel(Score::Star3) == "★★★☆☆"
+               && ScoreLabel(Score::Star5) == "★★★★★"
+               && ScoreLabel(Score::Skipped) == "—";
+        if (!ok) {
+            std::cerr << "FAIL [score-label-stars]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [score-label-stars]\n";
+        }
+    }
+
     // ParseSession / SerializeSessionBody roundtrip with all fields
     {
         QuestionTurn t1;
         t1.question    = "What is RAII?";
         t1.userAnswer  = "Resource Acquisition Is Initialisation.";
-        t1.score       = Score::Correct;
+        t1.score       = Score::Star5;
         t1.explanation = "Correct. RAII ties resource lifetimes to object scope.";
         t1.flagged     = false;
 
@@ -51,7 +82,7 @@ int test_session() {
         bool ok = reparsed.size() == 2
                && reparsed[0].question    == t1.question
                && reparsed[0].userAnswer  == t1.userAnswer
-               && reparsed[0].score       == Score::Correct
+               && reparsed[0].score       == Score::Star5
                && reparsed[0].explanation == t1.explanation
                && reparsed[0].flagged     == false
                && reparsed[1].question    == t2.question
@@ -76,7 +107,7 @@ int test_session() {
         QuestionTurn t;
         t.question   = "Explain stack vs heap.";
         t.userAnswer = "Stack is fast and LIFO.\nHeap is dynamic and larger.\nUse smart pointers.";
-        t.score      = Score::Partial;
+        t.score      = Score::Star3;
         t.explanation = "Good, but missed deallocation details.";
         t.flagged    = false;
 
@@ -103,7 +134,7 @@ int test_session() {
         QuestionTurn t;
         t.question    = "What is a list comprehension?";
         t.userAnswer  = "A concise way to create lists.";
-        t.score       = Score::Correct;
+        t.score       = Score::Star5;
         t.explanation = "Correct. `[x for x in iterable if cond]`";
         t.flagged     = false;
 
@@ -116,7 +147,7 @@ int test_session() {
             if (loaded.size() != 1
                 || loaded[0].question   != t.question
                 || loaded[0].userAnswer != t.userAnswer
-                || loaded[0].score      != Score::Correct
+                || loaded[0].score      != Score::Star5
                 || loaded[0].flagged    != false) {
                 std::cerr << "FAIL [append-session-new]: loaded " << loaded.size() << " turns\n";
                 ++failures;
@@ -145,7 +176,7 @@ int test_session() {
         QuestionTurn t;
         t.question    = "Second question?";
         t.userAnswer  = "Second answer.";
-        t.score       = Score::Partial;
+        t.score       = Score::Star3;
         t.explanation = "Partially right.";
         t.flagged     = true;
 
@@ -157,7 +188,7 @@ int test_session() {
             auto loaded = LoadSession(tmp.string());
             if (loaded.size() != 2
                 || loaded[1].question != "Second question?"
-                || loaded[1].score    != Score::Partial
+                || loaded[1].score    != Score::Star3
                 || loaded[1].flagged  != true) {
                 std::cerr << "FAIL [append-session-existing]: loaded " << loaded.size() << " turns\n";
                 ++failures;
@@ -307,7 +338,7 @@ int test_session() {
         QuestionTurn t;
         t.question    = "What is RAII?";
         t.userAnswer  = "Resource management.";
-        t.score       = Score::Correct;
+        t.score       = Score::Star5;
         t.explanation = "Good.";
         t.flagged     = false;
         t.note        = "Remember: scope-bound cleanup.";
@@ -329,7 +360,7 @@ int test_session() {
     {
         QuestionTurn t;
         t.question = "Q?"; t.userAnswer = "A.";
-        t.score = Score::Correct; t.explanation = "E.";
+        t.score = Score::Star5; t.explanation = "E.";
         t.flagged = false; t.note = "";
 
         std::string body = SerializeSessionBody({t});

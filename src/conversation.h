@@ -30,7 +30,10 @@ bool AppendTurn(const std::string& filePath, int chId,
 bool DeleteTurn(const std::string& filePath, int chId, int index);
 
 // Build the LLM prompt for a Q&A request.
+// personalities: optional list of commentator names — when non-empty, the response
+// is instructed to append a :::tidbit[Name] block after the answer.
 std::string BuildQAPrompt(const std::string& docMarkdown,
                           const std::string& chTitle,
                           const std::vector<ConversationTurn>& history,
-                          const std::string& question);
+                          const std::string& question,
+                          const std::vector<std::string>& personalities = {});

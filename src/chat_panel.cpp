@@ -5,6 +5,7 @@
 #include "markdown.h"
 #include "meta.h"
 #include "logger.h"
+#include "project.h"
 #include "saved_convos.h"
 #include <ctime>
 #include <fstream>
@@ -76,6 +77,20 @@ void ChatPanel::SyncProject(const std::string& projectDir,
 
     m_projectDir = projectDir;
     m_chatFile   = projectDir + "/chat.md";
+
+    // Load personalities for tidbit injection.
+    {
+        ProjectConfig pcfg = LoadConfig(projectDir);
+        m_personalities.clear();
+        std::string p = pcfg.personalities;
+        size_t start = 0, end;
+        while ((end = p.find('|', start)) != std::string::npos) {
+            std::string name = p.substr(start, end - start);
+            if (!name.empty()) m_personalities.push_back(name);
+            start = end + 1;
+        }
+        if (start < p.size()) m_personalities.push_back(p.substr(start));
+    }
 
     // Create chat.md if it doesn't exist yet.
     if (!fs::exists(m_chatFile)) {
@@ -184,7 +199,8 @@ void ChatPanel::OnSend(wxCommandEvent&) {
     }
 
     std::vector<ConversationTurn> history = m_turns;
-    std::string prompt = BuildQAPrompt(contextMd, "Study Chat", history, question);
+    std::string prompt = BuildQAPrompt(contextMd, "Study Chat", history, question,
+                                       m_personalities);
     LLMConfig   cfg    = m_llmCfg;
     std::string chatFile = m_chatFile;
 

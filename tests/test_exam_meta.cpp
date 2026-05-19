@@ -56,15 +56,13 @@ int test_exam_meta() {
         EnsureExamMeta(dir.string());
 
         SessionRecord rec;
-        rec.sessionFile   = "session_20260516_143022.md";
-        rec.startedAt     = "2026-05-16T14:30:22";
-        rec.finishedAt    = "2026-05-16T14:47:55";
-        rec.topic         = "Python data structures";
-        rec.difficulty    = "medium";
+        rec.sessionFile    = "session_20260516_143022.md";
+        rec.startedAt      = "2026-05-16T14:30:22";
+        rec.finishedAt     = "2026-05-16T14:47:55";
+        rec.topic          = "Python data structures";
+        rec.difficulty     = "medium";
         rec.totalQuestions = 10;
-        rec.correct        = 6;
-        rec.partial        = 2;
-        rec.missed         = 1;
+        rec.totalStars     = 38;   // e.g. 8 rated turns summing to 38 stars
         rec.skipped        = 1;
         rec.flaggedCount   = 3;
 
@@ -78,9 +76,7 @@ int test_exam_meta() {
                && meta.sessions[0].topic          == rec.topic
                && meta.sessions[0].difficulty     == rec.difficulty
                && meta.sessions[0].totalQuestions == 10
-               && meta.sessions[0].correct        == 6
-               && meta.sessions[0].partial        == 2
-               && meta.sessions[0].missed         == 1
+               && meta.sessions[0].totalStars     == 38
                && meta.sessions[0].skipped        == 1
                && meta.sessions[0].flaggedCount   == 3;
         if (!ok) {
@@ -102,21 +98,21 @@ int test_exam_meta() {
         rec.sessionFile    = "session_abc.md";
         rec.startedAt      = "2026-05-16T10:00:00";
         rec.totalQuestions = 5;
-        rec.correct        = 3;
+        rec.totalStars        = 3;
         RecordSession(dir.string(), rec);
 
         // Update same session
-        rec.correct = 5;
+        rec.totalStars = 5;
         rec.finishedAt = "2026-05-16T10:15:00";
         RecordSession(dir.string(), rec);
 
         auto meta = LoadExamMeta(dir.string());
         bool ok = meta.sessions.size() == 1
-               && meta.sessions[0].correct    == 5
+               && meta.sessions[0].totalStars    == 5
                && meta.sessions[0].finishedAt == "2026-05-16T10:15:00";
         if (!ok) {
             std::cerr << "FAIL [exam-meta-upsert]: sessions=" << meta.sessions.size()
-                      << " correct=" << (meta.sessions.empty() ? -1 : meta.sessions[0].correct) << "\n";
+                      << " correct=" << (meta.sessions.empty() ? -1 : meta.sessions[0].totalStars) << "\n";
             ++failures;
         } else {
             std::cout << "PASS [exam-meta-upsert]\n";
@@ -135,14 +131,14 @@ int test_exam_meta() {
             rec.sessionFile    = "session_" + std::to_string(i) + ".md";
             rec.startedAt      = "2026-05-16T10:0" + std::to_string(i) + ":00";
             rec.totalQuestions = 10;
-            rec.correct        = i * 2;
+            rec.totalStars        = i * 2;
             RecordSession(dir.string(), rec);
         }
 
         auto meta = LoadExamMeta(dir.string());
         bool ok = meta.sessions.size() == 3
                && meta.sessions[0].sessionFile == "session_0.md"
-               && meta.sessions[2].correct     == 4;
+               && meta.sessions[2].totalStars  == 4;
         if (!ok) {
             std::cerr << "FAIL [exam-meta-multi]: sessions=" << meta.sessions.size() << "\n";
             ++failures;

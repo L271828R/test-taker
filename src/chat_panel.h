@@ -26,6 +26,7 @@ private:
     std::string              m_projectDir;
     std::string              m_chatFile;   // <projectDir>/chat.md
     LLMConfig                m_llmCfg;
+    std::vector<std::string> m_personalities;
     bool                     m_darkMode = false;
     bool                     m_busy     = false;
     std::vector<ConversationTurn> m_turns;

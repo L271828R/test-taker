@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 
-enum class Score { Correct, Partial, Missed, Skipped };
+enum class Score { Star1, Star2, Star3, Star4, Star5, Skipped };
 
 struct QuestionTurn {
     std::string question;

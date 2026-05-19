@@ -360,10 +360,9 @@ void ProjectPanel::RefreshProjects() {
             : "No projects match the current search.");
     }
 
-    // Try to re-select the current project.
+    // Try to re-select (and on first load, activate) the last-used project.
     AppState st = LoadAppState();
     if (!st.currentProject.empty()) {
-        // Walk all items looking for a matching project node.
         std::function<wxTreeItemId(wxTreeItemId)> findProject =
             [&](wxTreeItemId node) -> wxTreeItemId {
                 wxTreeItemIdValue cookie;
@@ -371,7 +370,7 @@ void ProjectPanel::RefreshProjects() {
                 while (child.IsOk()) {
                     auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(child));
                     if (tn && tn->kind == TreeNode::Kind::Project &&
-                        tn->name == st.currentProject) {
+                        tn->path == st.currentProject) {
                         return child;
                     }
                     wxTreeItemId found = findProject(child);
@@ -386,14 +385,19 @@ void ProjectPanel::RefreshProjects() {
             m_treeCtrl->SelectItem(found);
             m_treeCtrl->EnsureVisible(found);
 
-            // Fire the activation callback so all tabs sync on startup.
-            auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(found));
-            if (tn && m_openCallback) {
-                std::string path = tn->path;
-                CallAfter([this, path]() { m_openCallback(path); });
+            // Only fire the activation callback once at startup, not on every
+            // sort/search/refresh call. This also prevents a second instance from
+            // auto-activating a different project that the first instance last used.
+            if (!m_startupDone) {
+                auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(found));
+                if (tn && m_openCallback) {
+                    std::string path = tn->path;
+                    CallAfter([this, path]() { m_openCallback(path); });
+                }
             }
         }
     }
+    m_startupDone = true;
 }
 
 // ===========================================================================
@@ -583,8 +587,8 @@ void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
 
     if (isProject) {
         AppState st = LoadAppState();
-        if (st.currentProject == oldName) {
-            st.currentProject = newName;
+        if (st.currentProject == oldPath) {
+            st.currentProject = newFsPath.string();
             SaveAppState(st);
         }
     }
@@ -766,7 +770,7 @@ void ProjectPanel::ActivateSelectedProject() {
     std::string projectPath = tn->path;
 
     AppState st = LoadAppState();
-    st.currentProject = projectName;
+    st.currentProject = projectPath;
     SaveAppState(st);
 
     Logger::get().log("Activating project: " + projectName);

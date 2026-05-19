@@ -373,44 +373,48 @@ std::string NewSessionPanel::GenerateSessionFilename() const {
 
 // ---------------------------------------------------------------------------
 void NewSessionPanel::SaveFormState() const {
-    AppState st = LoadAppState();
-    st.topic              = m_topicCtrl->GetValue().ToStdString();
-    st.instructions       = m_instrCtrl->GetValue().ToStdString();
-    st.focusAreas         = SerializeFocusAreas(m_focusListPanel->GetAreas());
-    st.backend            = m_backendChoice->GetString(
-        m_backendChoice->GetSelection()).ToStdString();
-    st.apiKey             = m_apiKeyCtrl->GetValue().ToStdString();
-    st.ollamaModel        = m_ollamaModel->GetValue().ToStdString();
-    st.lastExamProjectDir = m_activeProjectDir;
-    SaveAppState(st);
-
-    // Personalities are per-project: save to the project's .config file.
+    // All exam form state is per-project so two instances on different projects
+    // never clobber each other.
     if (!m_activeProjectDir.empty()) {
         ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
-        pcfg.personalities = JoinPipe(m_personalityPanel->GetSelected());
+        pcfg.examTopic        = m_topicCtrl->GetValue().ToStdString();
+        pcfg.examInstructions = m_instrCtrl->GetValue().ToStdString();
+        pcfg.examFocusAreas   = SerializeFocusAreas(m_focusListPanel->GetAreas());
+        pcfg.examBackend      = m_backendChoice->GetString(
+            m_backendChoice->GetSelection()).ToStdString();
+        pcfg.examApiKey       = m_apiKeyCtrl->GetValue().ToStdString();
+        pcfg.examOllamaModel  = m_ollamaModel->GetValue().ToStdString();
+        pcfg.personalities    = JoinPipe(m_personalityPanel->GetSelected());
         SaveConfig(m_activeProjectDir, pcfg);
     }
+
+    // Only the active project dir stays in global state so we know which project
+    // to re-open on next startup.
+    AppState st = LoadAppState();
+    st.lastExamProjectDir = m_activeProjectDir;
+    SaveAppState(st);
 }
 
 void NewSessionPanel::RestoreFormState() {
-    AppState st = LoadAppState();
-    if (!st.topic.empty())
-        m_topicCtrl->SetValue(wxString::FromUTF8(st.topic));
-    if (!st.instructions.empty())
-        m_instrCtrl->SetValue(wxString::FromUTF8(st.instructions));
-    if (!st.backend.empty()) {
-        int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
+    if (m_activeProjectDir.empty()) return;
+    ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
+    if (!pcfg.examTopic.empty())
+        m_topicCtrl->SetValue(wxString::FromUTF8(pcfg.examTopic));
+    if (!pcfg.examInstructions.empty())
+        m_instrCtrl->SetValue(wxString::FromUTF8(pcfg.examInstructions));
+    if (!pcfg.examBackend.empty()) {
+        int idx = m_backendChoice->FindString(wxString::FromUTF8(pcfg.examBackend));
         if (idx != wxNOT_FOUND) {
             m_backendChoice->SetSelection(idx);
             UpdateBackendFields();
         }
     }
-    if (!st.focusAreas.empty())
-        m_focusListPanel->SetAreas(DeserializeFocusAreas(st.focusAreas));
-    if (!st.apiKey.empty())
-        m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));
-    if (!st.ollamaModel.empty())
-        m_ollamaModel->SetValue(wxString::FromUTF8(st.ollamaModel));
+    if (!pcfg.examFocusAreas.empty())
+        m_focusListPanel->SetAreas(DeserializeFocusAreas(pcfg.examFocusAreas));
+    if (!pcfg.examApiKey.empty())
+        m_apiKeyCtrl->SetValue(wxString::FromUTF8(pcfg.examApiKey));
+    if (!pcfg.examOllamaModel.empty())
+        m_ollamaModel->SetValue(wxString::FromUTF8(pcfg.examOllamaModel));
 }
 
 // ---------------------------------------------------------------------------
@@ -482,6 +486,8 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     llmCfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
     llmCfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
 
+    cfg.largeModel = IsLargeModel(llmCfg.backend);
+
     // Create session file
     if (!InitProject(m_activeProjectDir)) {
         SetStatus("Cannot initialise project folder.");
@@ -514,11 +520,11 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
 
     SaveFormState();
 
-    // Persist last session so it can be resumed after restart.
+    // Persist last session per-project so it can be resumed after restart.
     {
-        AppState st = LoadAppState();
-        st.lastSessionFile = fs::path(sessionFile).filename().string();
-        SaveAppState(st);
+        ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
+        pcfg.lastSession = fs::path(sessionFile).filename().string();
+        SaveConfig(m_activeProjectDir, pcfg);
     }
 
     Logger::get().log("Starting session: " + sessionFile

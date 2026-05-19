@@ -89,9 +89,11 @@ ExamProjectMeta LoadExamMeta(const std::string& projectDir) {
             if (line.find("\"topic\"")      != std::string::npos) cur.topic          = extractStr(line, "topic");
             if (line.find("\"difficulty\"") != std::string::npos) cur.difficulty     = extractStr(line, "difficulty");
             if (line.find("\"total\"")      != std::string::npos) cur.totalQuestions = extractInt(line, "total");
-            if (line.find("\"correct\"")    != std::string::npos) cur.correct        = extractInt(line, "correct");
-            if (line.find("\"partial\"")    != std::string::npos) cur.partial        = extractInt(line, "partial");
-            if (line.find("\"missed\"")     != std::string::npos) cur.missed         = extractInt(line, "missed");
+            if (line.find("\"totalStars\"")  != std::string::npos) cur.totalStars     = extractInt(line, "totalStars");
+            // Backward compat: reconstruct totalStars from old correct/partial/missed fields
+            if (line.find("\"correct\"")    != std::string::npos) cur.totalStars    += extractInt(line, "correct") * 5;
+            if (line.find("\"partial\"")    != std::string::npos) cur.totalStars    += extractInt(line, "partial") * 3;
+            if (line.find("\"missed\"")     != std::string::npos) cur.totalStars    += extractInt(line, "missed")  * 1;
             if (line.find("\"skipped\"")    != std::string::npos) cur.skipped        = extractInt(line, "skipped");
             if (line.find("\"flagged\"")    != std::string::npos) cur.flaggedCount   = extractInt(line, "flagged");
             // End of object — flush on closing brace line
@@ -124,9 +126,7 @@ void SaveExamMeta(const std::string& projectDir, const ExamProjectMeta& meta) {
         f << "      \"topic\": \""      << jsonEscape(s.topic)       << "\",\n";
         f << "      \"difficulty\": \"" << jsonEscape(s.difficulty)  << "\",\n";
         f << "      \"total\": "        << s.totalQuestions          << ",\n";
-        f << "      \"correct\": "      << s.correct                 << ",\n";
-        f << "      \"partial\": "      << s.partial                 << ",\n";
-        f << "      \"missed\": "       << s.missed                  << ",\n";
+        f << "      \"totalStars\": "    << s.totalStars              << ",\n";
         f << "      \"skipped\": "      << s.skipped                 << ",\n";
         f << "      \"flagged\": "      << s.flaggedCount            << "\n";
         f << "    }";

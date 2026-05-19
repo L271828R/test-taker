@@ -33,27 +33,37 @@ static std::string decodeNewlines(const std::string& s) {
 
 // ---------------------------------------------------------------------------
 Score ScoreFromString(const std::string& s) {
-    if (s == "correct") return Score::Correct;
-    if (s == "partial") return Score::Partial;
-    if (s == "missed")  return Score::Missed;
+    if (s == "1") return Score::Star1;
+    if (s == "2") return Score::Star2;
+    if (s == "3") return Score::Star3;
+    if (s == "4") return Score::Star4;
+    if (s == "5") return Score::Star5;
+    // Backward compat with old session files
+    if (s == "correct") return Score::Star5;
+    if (s == "partial") return Score::Star3;
+    if (s == "missed")  return Score::Star1;
     return Score::Skipped;
 }
 
 std::string ScoreToString(Score s) {
     switch (s) {
-        case Score::Correct: return "correct";
-        case Score::Partial: return "partial";
-        case Score::Missed:  return "missed";
+        case Score::Star1:   return "1";
+        case Score::Star2:   return "2";
+        case Score::Star3:   return "3";
+        case Score::Star4:   return "4";
+        case Score::Star5:   return "5";
         default:             return "skipped";
     }
 }
 
 std::string ScoreLabel(Score s) {
     switch (s) {
-        case Score::Correct: return "Correct";
-        case Score::Partial: return "Partial";
-        case Score::Missed:  return "Missed";
-        default:             return "Skipped";
+        case Score::Star1:   return "\xe2\x98\x85\xe2\x98\x86\xe2\x98\x86\xe2\x98\x86\xe2\x98\x86"; // ★☆☆☆☆
+        case Score::Star2:   return "\xe2\x98\x85\xe2\x98\x85\xe2\x98\x86\xe2\x98\x86\xe2\x98\x86"; // ★★☆☆☆
+        case Score::Star3:   return "\xe2\x98\x85\xe2\x98\x85\xe2\x98\x85\xe2\x98\x86\xe2\x98\x86"; // ★★★☆☆
+        case Score::Star4:   return "\xe2\x98\x85\xe2\x98\x85\xe2\x98\x85\xe2\x98\x85\xe2\x98\x86"; // ★★★★☆
+        case Score::Star5:   return "\xe2\x98\x85\xe2\x98\x85\xe2\x98\x85\xe2\x98\x85\xe2\x98\x85"; // ★★★★★
+        default:             return "\xe2\x80\x94"; // —
     }
 }
 

@@ -9,9 +9,7 @@ struct SessionRecord {
     std::string topic;
     std::string difficulty;
     int totalQuestions = 0;
-    int correct        = 0;
-    int partial        = 0;
-    int missed         = 0;
+    int totalStars     = 0;  // sum of star values (1-5) for all rated turns
     int skipped        = 0;
     int flaggedCount   = 0;
 };

@@ -156,6 +156,21 @@ int test_config() {
         }
     }
 
+    // currentProject stores the full absolute path so two projects with the same
+    // folder name in different subdirectories don't collide across instances.
+    {
+        std::string fullPath = "/Users/me/projects/google-test/GoogleTest";
+        AppState st = ParseState("currentProject = " + fullPath + "\n");
+        bool ok = st.currentProject == fullPath;
+        if (!ok) {
+            std::cerr << "FAIL [state-current-project-full-path]: got '"
+                      << st.currentProject << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [state-current-project-full-path]\n";
+        }
+    }
+
     // ParseState reads lastExamProjectDir (persists which project the New Session
     // form was filled out for, so that on restart projectChanged stays false).
     {

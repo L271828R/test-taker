@@ -9,11 +9,13 @@
 #include "exam_meta.h"
 #include "focus_list_panel.h"
 #include "config.h"
+#include "project.h"
 #include "logger.h"
 #include "html_template.h"
 #include <wx/config.h>
 #include <wx/spinctrl.h>
 #include <fstream>
+#include <unistd.h>
 
 // Notebook tab indices
 enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS, TAB_SAVED };
@@ -32,7 +34,8 @@ wxEND_EVENT_TABLE()
 
 // ---------------------------------------------------------------------------
 AppFrame::AppFrame()
-    : wxFrame(nullptr, wxID_ANY, "TestTaker",
+    : wxFrame(nullptr, wxID_ANY,
+              wxString::Format("TestTaker [PID %d]", (int)getpid()),
               wxDefaultPosition, wxSize(1100, 780))
 {
     // ── Persist dark-mode preference ─────────────────────────────────────
@@ -122,17 +125,14 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
     m_newSessionPage->SyncProject(projectDir);
     m_reviewPage->RefreshSessions(projectDir);
 
-    // Build LLM config from persisted app state so ChatPanel has credentials
-    AppState state = LoadAppState();
+    // Build LLM config from per-project config so ChatPanel has credentials
+    ProjectConfig pcfg = LoadConfig(projectDir);
     LLMConfig llmCfg;
-    llmCfg.backend = LLMBackend::ClaudeP; // default; NewSessionPanel overrides per session
-    if (state.backend == "Anthropic API") {
-        llmCfg.backend = LLMBackend::API;
-        llmCfg.apiKey  = state.apiKey;
-    } else if (state.backend == "Ollama") {
-        llmCfg.backend     = LLMBackend::Ollama;
-        llmCfg.ollamaModel = state.ollamaModel;
-    }
+    llmCfg.backend = BackendFromLabel(pcfg.examBackend);
+    if (llmCfg.backend == LLMBackend::API)
+        llmCfg.apiKey = pcfg.examApiKey;
+    else if (llmCfg.backend == LLMBackend::Ollama)
+        llmCfg.ollamaModel = pcfg.examOllamaModel;
     m_chatPage->SyncProject(projectDir, llmCfg, m_darkMode);
     m_corpusPage->SyncProject(projectDir, llmCfg.ollamaUrl);
     m_savedPage->SyncProject(projectDir, m_darkMode);
@@ -141,8 +141,8 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
     // are already persisted via AppendSessionTurn, so no data is lost.
     {
         bool resumed = false;
-        if (!state.lastSessionFile.empty()) {
-            std::string sessionPath = projectDir + "/" + state.lastSessionFile;
+        if (!pcfg.lastSession.empty()) {
+            std::string sessionPath = projectDir + "/" + pcfg.lastSession;
             std::ifstream check(sessionPath);
             if (check.good()) {
                 m_examPage->ResumeSession(projectDir, sessionPath, llmCfg, m_darkMode);

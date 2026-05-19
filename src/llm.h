@@ -23,6 +23,11 @@ inline int CorpusTopK(LLMBackend b) {
     return (b == LLMBackend::Ollama || b == LLMBackend::Clipboard) ? 3 : 9;
 }
 
+// True for cloud backends capable of complex structured output (diagrams, tidbits, etc.).
+inline bool IsLargeModel(LLMBackend b) {
+    return b != LLMBackend::Ollama && b != LLMBackend::Clipboard;
+}
+
 // Convert between stored labels and backend enum values.
 inline LLMBackend BackendFromLabel(const std::string& label) {
     if (label == "claude -p")      return LLMBackend::ClaudeP;

@@ -168,7 +168,8 @@ bool DeleteTurn(const std::string& filePath, int chId, int index) {
 std::string BuildQAPrompt(const std::string& docMarkdown,
                           const std::string& chTitle,
                           const std::vector<ConversationTurn>& history,
-                          const std::string& question) {
+                          const std::string& question,
+                          const std::vector<std::string>& personalities) {
     std::ostringstream out;
     out << "## Document\n\n"
         << "The following is the full document the reader is studying:\n\n"
@@ -182,6 +183,20 @@ std::string BuildQAPrompt(const std::string& docMarkdown,
            "document does not cover the topic. If the document is silent on something "
            "interesting, say so briefly and then share what you know. Keep answers clear "
            "and conversational — a few sentences to a short paragraph.\n\n";
+
+    if (!personalities.empty()) {
+        std::string nameList;
+        for (const auto& p : personalities) {
+            if (!nameList.empty()) nameList += ", ";
+            nameList += p;
+        }
+        out << "After your answer, on a new line add a :::tidbit[Name] block — "
+               "pick one of: " << nameList << " — using their characteristic voice "
+               "for a brief insight (1-3 sentences). Format exactly:\n"
+               ":::tidbit[Name]\n"
+               "<comment>\n"
+               ":::\n\n";
+    }
 
     if (!history.empty()) {
         out << "## Conversation so far\n\n";

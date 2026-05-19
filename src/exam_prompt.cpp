@@ -98,6 +98,12 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
 
     int questionNumber = (int)history.size() + 1;
 
+    // Mermaid hint — only for large cloud models that reliably generate fenced code blocks.
+    const std::string mermaidHint = cfg.largeModel
+        ? " If a diagram would clarify the concept, add a ```mermaid``` code block"
+          " after the explanation text."
+        : "";
+
     // Build the personality tidbit instruction if personalities are configured.
     std::string tidbitInstruction;
     std::string tidbitFormatExample;
@@ -129,7 +135,7 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
 
         out << "Respond with exactly two sections:\n\n"
                "EXPLANATION: <explain the correct answer in 2-5 sentences. Begin directly with the answer."
-            << tidbitInstruction << ">\n";
+            << mermaidHint << tidbitInstruction << ">\n";
         if (questionsRemaining > 0) {
             out << "NEXT_QUESTION: <next question text only>\n\n"
                    "Output format (exactly):\n"
@@ -150,10 +156,12 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
             << "User's answer: " << userAnswer << "\n\n";
 
         out << "Your task — respond in this order, nothing else:\n\n"
-               "1. Score the answer:       SCORE: correct  OR  SCORE: partial  OR  SCORE: missed\n"
+               "1. Score the answer:       SCORE: 1  through  SCORE: 5\n"
+               "   1 = completely wrong, 2 = major gaps, 3 = half right,\n"
+               "   4 = mostly right with minor gaps, 5 = fully right\n"
                "2. Explain the answer:     EXPLANATION: <state the correct answer and explain it in 2-5 sentences."
                " Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer."
-            << tidbitInstruction << ">\n";
+            << mermaidHint << tidbitInstruction << ">\n";
 
         if (questionsRemaining > 0) {
             out << "3. Ask the next question:  NEXT_QUESTION: <question text only>\n\n"
@@ -269,10 +277,12 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .answer-body p:last-child  { margin-bottom:0; }
 .verdict { display:inline-block; padding:.15em .6em; border-radius:4px;
            font-size:.85em; font-weight:600; margin-bottom:.4em; }
-.verdict.correct { background:#1a7f37; color:#fff; }
-.verdict.partial  { background:#9a6700; color:#fff; }
-.verdict.missed   { background:#cf222e; color:#fff; }
-.verdict.skipped  { background:#57606a; color:#fff; }
+.verdict.s1 { background:#cf222e; color:#fff; }
+.verdict.s2 { background:#e36b0a; color:#fff; }
+.verdict.s3 { background:#9a6700; color:#fff; }
+.verdict.s4 { background:#2da44e; color:#fff; }
+.verdict.s5 { background:#1a7f37; color:#fff; }
+.verdict.skipped { background:#57606a; color:#fff; }
 .explanation { font-size:.95em; }
 </style>
 )";
@@ -280,9 +290,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
     for (int i = 0; i < (int)turns.size(); ++i) {
         const auto& t = turns[i];
         std::string scoreClass =
-            t.score == Score::Correct ? "correct" :
-            t.score == Score::Partial ? "partial" :
-            t.score == Score::Missed  ? "missed"  : "skipped";
+            t.score == Score::Skipped ? "skipped" : "s" + ScoreToString(t.score);
         std::string flagClass = t.flagged ? " flagged" : "";
         std::string flagLabel = t.flagged ? "⚑ flagged" : "⚑ flag";
         std::string noteClass = t.note.empty() ? "" : " has-note";
@@ -363,10 +371,12 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
 .hist-answer   { color:var(--text-muted); font-size:.88em; margin-bottom:.25em; }
 .hist-verdict  { display:inline-block; padding:.1em .5em; border-radius:4px;
                  font-size:.8em; font-weight:600; margin-bottom:.3em; }
-.hist-verdict.correct { background:#1a7f37; color:#fff; }
-.hist-verdict.partial  { background:#9a6700; color:#fff; }
-.hist-verdict.missed   { background:#cf222e; color:#fff; }
-.hist-verdict.skipped  { background:#57606a; color:#fff; }
+.hist-verdict.s1 { background:#cf222e; color:#fff; }
+.hist-verdict.s2 { background:#e36b0a; color:#fff; }
+.hist-verdict.s3 { background:#9a6700; color:#fff; }
+.hist-verdict.s4 { background:#2da44e; color:#fff; }
+.hist-verdict.s5 { background:#1a7f37; color:#fff; }
+.hist-verdict.skipped { background:#57606a; color:#fff; }
 .hist-expl { font-size:.88em; }
 .hist-note { margin-top:0.4em; padding:0.4em 0.6em;
              background:var(--surface); border-left:3px solid var(--link);
@@ -388,9 +398,7 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
         for (int i = 0; i < (int)grp.turns.size(); ++i) {
             const auto& t = grp.turns[i];
             std::string scoreClass =
-                t.score == Score::Correct ? "correct" :
-                t.score == Score::Partial ? "partial" :
-                t.score == Score::Missed  ? "missed"  : "skipped";
+                t.score == Score::Skipped ? "skipped" : "s" + ScoreToString(t.score);
             std::string flagClass  = t.flagged     ? " flagged"  : "";
             std::string flagLabel  = t.flagged     ? "&#x2691; flagged" : "&#x2691; flag";
             std::string noteClass  = t.note.empty() ? ""          : " has-note";

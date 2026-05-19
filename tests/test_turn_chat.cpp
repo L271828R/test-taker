@@ -151,7 +151,7 @@ int test_turn_chat() {
         QuestionTurn examTurn;
         examTurn.question    = "What is RAII?";
         examTurn.userAnswer  = "Resource management.";
-        examTurn.score       = Score::Partial;
+        examTurn.score       = Score::Star3;
         examTurn.explanation = "Partially correct — you missed the scope aspect.";
 
         TurnChatTurn h1{"Why partial?", "Because you omitted the scope binding."};
@@ -183,7 +183,7 @@ int test_turn_chat() {
         QuestionTurn qt;
         qt.question   = "What is test control?";
         qt.userAnswer = "I don't know";
-        qt.score      = Score::Missed;
+        qt.score      = Score::Star1;
         qt.explanation = "Test control is taking corrective actions based on monitoring.";
 
         std::string corpus = "Excerpt: test control involves adjusting the plan when deviations occur.";
@@ -203,7 +203,7 @@ int test_turn_chat() {
         QuestionTurn qt;
         qt.question    = "What is X?";
         qt.userAnswer  = "Y";
-        qt.score       = Score::Correct;
+        qt.score       = Score::Star5;
         qt.explanation = "Correct.";
 
         std::string prompt = BuildTurnChatPrompt(qt, {}, "tell me more");

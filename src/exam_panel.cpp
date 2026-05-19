@@ -2,6 +2,7 @@
 #include "html_template.h"
 #include "exam_prompt.h"
 #include "exam_meta.h"
+#include "project.h"
 #include "corpus.h"
 #include "markdown.h"
 #include "logger.h"
@@ -422,7 +423,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
 
             auto scored = ParseScoredResponse(result.text);
             if (!scored.parseOk) {
-                scored.score       = Score::Missed;
+                scored.score       = Score::Star1;
                 scored.explanation = result.text;
                 scored.parseOk     = true;
             }
@@ -588,9 +589,11 @@ void ExamPanel::AbandonSession() {
     m_abandonBtn->Disable();
     m_statusLabel->SetLabel("Session ended. See Review tab for results.");
 
-    AppState st = LoadAppState();
-    st.lastSessionFile.clear();
-    SaveAppState(st);
+    if (!m_projectDir.empty()) {
+        ProjectConfig pcfg = LoadConfig(m_projectDir);
+        pcfg.lastSession.clear();
+        SaveConfig(m_projectDir, pcfg);
+    }
 
     if (m_onComplete) m_onComplete(m_sessionFile);
     Render();

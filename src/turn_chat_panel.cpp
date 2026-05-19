@@ -129,9 +129,11 @@ void TurnChatPanel::OnClose(wxCommandEvent&) {
 std::string TurnChatPanel::BuildChatHTML(const std::string& pendingQ) const {
     std::string scoreColour;
     switch (m_examTurn.score) {
-        case Score::Correct: scoreColour = "#1a7f37"; break;
-        case Score::Partial: scoreColour = "#9a6700"; break;
-        case Score::Missed:  scoreColour = "#cf222e"; break;
+        case Score::Star5:   scoreColour = "#1a7f37"; break;
+        case Score::Star4:   scoreColour = "#2da44e"; break;
+        case Score::Star3:   scoreColour = "#9a6700"; break;
+        case Score::Star2:   scoreColour = "#e36b0a"; break;
+        case Score::Star1:   scoreColour = "#cf222e"; break;
         default:             scoreColour = "#57606a"; break;
     }
 

@@ -158,7 +158,7 @@ int test_exam_prompt() {
         QuestionTurn past;
         past.question    = "What is S3?";
         past.userAnswer  = "Object storage.";
-        past.score       = Score::Correct;
+        past.score       = Score::Star5;
         past.explanation = "Correct.";
         past.flagged     = false;
 
@@ -170,7 +170,11 @@ int test_exam_prompt() {
         bool ok = p.find("What is an IAM role?")  != std::string::npos
                && p.find("A set of permissions.")  != std::string::npos
                && p.find("What is S3?")            != std::string::npos
-               && p.find("SCORE:")                 != std::string::npos
+               && p.find("SCORE: 1")               != std::string::npos  // 5-star scale instruction
+               && p.find("SCORE: 5")               != std::string::npos
+               && p.find("SCORE: correct")         == std::string::npos  // old score labels gone
+               && p.find("SCORE: partial")         == std::string::npos
+               && p.find("SCORE: missed")          == std::string::npos
                && p.find("EXPLANATION:")           != std::string::npos
                && p.find("NEXT_QUESTION:")         != std::string::npos;
         if (!ok) {
@@ -242,15 +246,15 @@ int test_exam_prompt() {
         }
     }
 
-    // ParseScoredResponse: parses well-formed LLM output
+    // ParseScoredResponse: parses well-formed LLM output with 5-star score
     {
         std::string raw =
-            "SCORE: partial\n"
+            "SCORE: 3\n"
             "EXPLANATION: You got the main idea but missed the specifics.\n"
             "NEXT_QUESTION: What is an S3 bucket policy?\n";
         auto resp = ParseScoredResponse(raw);
         bool ok = resp.parseOk
-               && resp.score       == Score::Partial
+               && resp.score       == Score::Star3
                && resp.explanation == "You got the main idea but missed the specifics."
                && resp.nextQuestion == "What is an S3 bucket policy?";
         if (!ok) {
@@ -266,12 +270,12 @@ int test_exam_prompt() {
     // ParseScoredResponse: empty NEXT_QUESTION means session over
     {
         std::string raw =
-            "SCORE: correct\n"
+            "SCORE: 5\n"
             "EXPLANATION: Exactly right.\n"
             "NEXT_QUESTION: \n";
         auto resp = ParseScoredResponse(raw);
         bool ok = resp.parseOk
-               && resp.score        == Score::Correct
+               && resp.score        == Score::Star5
                && resp.nextQuestion == "";
         if (!ok) {
             std::cerr << "FAIL [parse-scored-response-end]\n";
@@ -281,32 +285,48 @@ int test_exam_prompt() {
         }
     }
 
-    // ParseScoredResponse: handles missed and skipped
+    // ParseScoredResponse: score 1 (fully wrong)
     {
         std::string raw =
-            "SCORE: missed\n"
+            "SCORE: 1\n"
             "EXPLANATION: The correct answer is X.\n"
             "NEXT_QUESTION: Explain Y.\n";
         auto resp = ParseScoredResponse(raw);
-        bool ok = resp.parseOk && resp.score == Score::Missed;
+        bool ok = resp.parseOk && resp.score == Score::Star1;
         if (!ok) {
-            std::cerr << "FAIL [parse-scored-missed]\n";
+            std::cerr << "FAIL [parse-scored-star1]\n";
             ++failures;
         } else {
-            std::cout << "PASS [parse-scored-missed]\n";
+            std::cout << "PASS [parse-scored-star1]\n";
+        }
+    }
+
+    // ParseScoredResponse: old-format backward compat (correct/partial/missed)
+    {
+        std::string raw =
+            "SCORE: correct\n"
+            "EXPLANATION: Right.\n"
+            "NEXT_QUESTION: Next?\n";
+        auto resp = ParseScoredResponse(raw);
+        bool ok = resp.parseOk && resp.score == Score::Star5;
+        if (!ok) {
+            std::cerr << "FAIL [parse-scored-backcompat]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-scored-backcompat]\n";
         }
     }
 
     // ParseScoredResponse: multi-line EXPLANATION is concatenated (small models wrap text)
     {
         std::string raw =
-            "SCORE: correct\n"
+            "SCORE: 4\n"
             "EXPLANATION: A VPC is a Virtual Private Cloud.\n"
             "It provides isolated network infrastructure in AWS.\n"
             "NEXT_QUESTION: What is a subnet?\n";
         auto resp = ParseScoredResponse(raw);
         bool ok = resp.parseOk
-               && resp.score == Score::Correct
+               && resp.score == Score::Star4
                && resp.explanation.find("Virtual Private Cloud") != std::string::npos
                && resp.explanation.find("isolated network") != std::string::npos
                && resp.nextQuestion == "What is a subnet?";
@@ -323,9 +343,9 @@ int test_exam_prompt() {
     {
         std::vector<QuestionTurn> history;
         QuestionTurn t1;
-        t1.question = "Q1"; t1.userAnswer = "A1"; t1.score = Score::Correct;
+        t1.question = "Q1"; t1.userAnswer = "A1"; t1.score = Score::Star5;
         QuestionTurn t2;
-        t2.question = "Q2"; t2.userAnswer = ""; t2.score = Score::Missed;
+        t2.question = "Q2"; t2.userAnswer = ""; t2.score = Score::Star1;
         history.push_back(t1);
         history.push_back(t2);
 
@@ -333,8 +353,8 @@ int test_exam_prompt() {
         bool ok = p.find("AWS S3 and IAM") != std::string::npos
                && p.find("Q1")             != std::string::npos
                && p.find("Q2")             != std::string::npos
-               && p.find("correct")        != std::string::npos
-               && p.find("missed")         != std::string::npos;
+               && p.find("SCORE: 5")       != std::string::npos
+               && p.find("SCORE: 1")       != std::string::npos;
         if (!ok) {
             std::cerr << "FAIL [session-summary-prompt]\n";
             ++failures;
@@ -348,10 +368,10 @@ int test_exam_prompt() {
         std::vector<QuestionTurn> turns;
         QuestionTurn t0;
         t0.question = "What is RAII?"; t0.userAnswer = "Resource management.";
-        t0.score = Score::Correct; t0.flagged = false;
+        t0.score = Score::Star5; t0.flagged = false;
         QuestionTurn t1;
         t1.question = "What is a vtable?"; t1.userAnswer = "Virtual dispatch table.";
-        t1.score = Score::Missed; t1.flagged = true;
+        t1.score = Score::Star1; t1.flagged = true;
         turns.push_back(t0);
         turns.push_back(t1);
 
@@ -377,10 +397,10 @@ int test_exam_prompt() {
         std::vector<QuestionTurn> turns;
         QuestionTurn t0;
         t0.question = "What is RAII?"; t0.userAnswer = "Resource management.";
-        t0.score = Score::Correct; t0.flagged = false; t0.note = "";
+        t0.score = Score::Star5; t0.flagged = false; t0.note = "";
         QuestionTurn t1;
         t1.question = "What is a vtable?"; t1.userAnswer = "Virtual dispatch table.";
-        t1.score = Score::Missed; t1.flagged = false;
+        t1.score = Score::Star1; t1.flagged = false;
         t1.note = "Remember: vtable is per class, not per object.";
         turns.push_back(t0);
         turns.push_back(t1);
@@ -405,10 +425,10 @@ int test_exam_prompt() {
         std::vector<QuestionTurn> turns;
         QuestionTurn t0;
         t0.question = "What is RAII?"; t0.userAnswer = "Resource management.";
-        t0.score = Score::Correct; t0.flagged = false;
+        t0.score = Score::Star5; t0.flagged = false;
         QuestionTurn t1;
         t1.question = "What is a vtable?"; t1.userAnswer = "Virtual dispatch table.";
-        t1.score = Score::Missed; t1.flagged = false;
+        t1.score = Score::Star1; t1.flagged = false;
         turns.push_back(t0);
         turns.push_back(t1);
 
@@ -437,7 +457,7 @@ int test_exam_prompt() {
         QuestionTurn t0;
         t0.question   = "Show a pure virtual function.";
         t0.userAnswer = "Like this:\n```cpp\nclass Monster { virtual void roar() = 0; };\n```";
-        t0.score      = Score::Partial;
+        t0.score      = Score::Star3;
         t0.flagged    = false;
         turns.push_back(t0);
 
@@ -458,7 +478,7 @@ int test_exam_prompt() {
         QuestionTurn t0;
         t0.question   = "Q";
         t0.userAnswer = "AlphaLine\n\nBetaLine";
-        t0.score      = Score::Correct;
+        t0.score      = Score::Star5;
         t0.flagged    = false;
         turns.push_back(t0);
 
@@ -482,7 +502,7 @@ int test_exam_prompt() {
         QuestionTurn t;
         t.question    = "What is RAII?";
         t.userAnswer  = "Resource Acquisition Is Initialisation.";
-        t.score       = Score::Correct;
+        t.score       = Score::Star5;
         t.explanation = "Correct. RAII ties resource lifetime to object scope.";
 
         std::vector<HistoryGroup> groups;
@@ -506,7 +526,7 @@ int test_exam_prompt() {
         QuestionTurn t0;
         t0.question    = "What is RAII?";
         t0.userAnswer  = "Resource lifetime.";
-        t0.score       = Score::Correct;
+        t0.score       = Score::Star5;
         t0.explanation = "RAII ties resource lifetime to object scope.";
         t0.flagged     = false;
         t0.saved       = false;
@@ -514,7 +534,7 @@ int test_exam_prompt() {
         QuestionTurn t1;
         t1.question    = "What is a vtable?";
         t1.userAnswer  = "Virtual dispatch table.";
-        t1.score       = Score::Missed;
+        t1.score       = Score::Star1;
         t1.explanation = "A vtable is a per-class array of function pointers.";
         t1.flagged     = true;   // already flagged
         t1.saved       = true;   // already saved
@@ -591,6 +611,27 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [parse-scored-tidbit]\n";
+        }
+    }
+
+    // BuildScoringAndNextPrompt: mermaid hint present for large models, absent for small.
+    {
+        ExamConfig cfgLarge = cfg;
+        cfgLarge.largeModel = true;
+        std::string pLarge = BuildScoringAndNextPrompt(cfgLarge, {}, "What is a VPC?", "A network.", 2);
+
+        ExamConfig cfgSmall = cfg;
+        cfgSmall.largeModel = false;
+        std::string pSmall = BuildScoringAndNextPrompt(cfgSmall, {}, "What is a VPC?", "A network.", 2);
+
+        bool largeHas  = pLarge.find("mermaid") != std::string::npos;
+        bool smallLacks = pSmall.find("mermaid") == std::string::npos;
+        if (!largeHas || !smallLacks) {
+            std::cerr << "FAIL [scoring-mermaid-hint]:"
+                      << " largeHas=" << largeHas << " smallLacks=" << smallLacks << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [scoring-mermaid-hint]\n";
         }
     }
 

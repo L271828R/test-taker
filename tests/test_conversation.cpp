@@ -203,5 +203,34 @@ int test_conversation() {
         }
     }
 
+    // BuildQAPrompt with personalities: tidbit instruction included
+    {
+        std::vector<ConversationTurn> history;
+        std::vector<std::string> personalities = {"Einstein", "Feynman"};
+        std::string prompt = BuildQAPrompt("doc", "Topic", history, "Why?", personalities);
+        bool hasTidbit  = prompt.find(":::tidbit") != std::string::npos;
+        bool hasNames   = prompt.find("Einstein")  != std::string::npos
+                       && prompt.find("Feynman")   != std::string::npos;
+        if (!hasTidbit || !hasNames) {
+            std::cerr << "FAIL [build-qa-prompt-personalities]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-qa-prompt-personalities]\n";
+        }
+    }
+
+    // BuildQAPrompt without personalities: no tidbit instruction
+    {
+        std::vector<ConversationTurn> history;
+        std::string prompt = BuildQAPrompt("doc", "Topic", history, "Why?");
+        bool noTidbit = prompt.find(":::tidbit") == std::string::npos;
+        if (!noTidbit) {
+            std::cerr << "FAIL [build-qa-prompt-no-personalities]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-qa-prompt-no-personalities]\n";
+        }
+    }
+
     return failures;
 }

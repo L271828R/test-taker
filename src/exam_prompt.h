@@ -21,6 +21,7 @@ struct ExamConfig {
     std::string projectContext;              // contents of context.md, injected verbatim
     int         totalQuestions = 10;
     bool        useCorpus      = false;      // when true, corpus chunks are retrieved and injected
+    bool        largeModel     = false;      // true for cloud backends that handle complex output
     std::vector<std::string> personalities;  // guest commentators injected as :::tidbit blocks
 };
 

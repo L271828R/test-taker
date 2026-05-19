@@ -9,6 +9,15 @@ struct ProjectConfig {
     std::string ollamaModel;
     std::string ollamaUrl;    // default: http://localhost:11434
     std::string personalities; // pipe-separated selected commentator names, e.g. "Einstein|Gates"
+
+    // Exam form state — per-project so two instances don't stomp each other.
+    std::string examTopic;
+    std::string examInstructions;
+    std::string examFocusAreas;   // "stars@@text|stars@@text|..."
+    std::string examBackend;
+    std::string examApiKey;
+    std::string examOllamaModel;
+    std::string lastSession;      // basename of last session file for auto-resume
 };
 
 // Creates <baseDir>/<name>/ with a claude.md stub and an empty .index file.

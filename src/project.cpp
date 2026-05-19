@@ -91,24 +91,38 @@ ProjectConfig LoadConfig(const std::string& projectDir) {
         if (eq == std::string::npos) continue;
         std::string k = line.substr(0, eq);
         std::string v = line.substr(eq + 1);
-        if      (k == "name")        cfg.name        = v;
-        else if (k == "llmBackend")  cfg.llmBackend  = v;
-        else if (k == "apiKey")      cfg.apiKey      = v;
-        else if (k == "ollamaModel") cfg.ollamaModel = v;
-        else if (k == "ollamaUrl")    cfg.ollamaUrl    = v;
-        else if (k == "personalities") cfg.personalities = v;
+        if      (k == "name")             cfg.name             = v;
+        else if (k == "llmBackend")       cfg.llmBackend       = v;
+        else if (k == "apiKey")           cfg.apiKey           = v;
+        else if (k == "ollamaModel")      cfg.ollamaModel      = v;
+        else if (k == "ollamaUrl")        cfg.ollamaUrl        = v;
+        else if (k == "personalities")    cfg.personalities    = v;
+        else if (k == "examTopic")        cfg.examTopic        = v;
+        else if (k == "examInstructions") cfg.examInstructions = v;
+        else if (k == "examFocusAreas")   cfg.examFocusAreas   = v;
+        else if (k == "examBackend")      cfg.examBackend      = v;
+        else if (k == "examApiKey")       cfg.examApiKey       = v;
+        else if (k == "examOllamaModel")  cfg.examOllamaModel  = v;
+        else if (k == "lastSession")      cfg.lastSession      = v;
     }
     return cfg;
 }
 
 bool SaveConfig(const std::string& projectDir, const ProjectConfig& cfg) {
     std::ofstream f(ConfigPath(projectDir));
-    f << "name="           << cfg.name           << "\n"
-      << "llmBackend="     << cfg.llmBackend     << "\n"
-      << "apiKey="         << cfg.apiKey         << "\n"
-      << "ollamaModel="    << cfg.ollamaModel    << "\n"
-      << "ollamaUrl="      << cfg.ollamaUrl      << "\n"
-      << "personalities="  << cfg.personalities  << "\n";
+    f << "name="             << cfg.name             << "\n"
+      << "llmBackend="       << cfg.llmBackend       << "\n"
+      << "apiKey="           << cfg.apiKey           << "\n"
+      << "ollamaModel="      << cfg.ollamaModel      << "\n"
+      << "ollamaUrl="        << cfg.ollamaUrl        << "\n"
+      << "personalities="    << cfg.personalities    << "\n"
+      << "examTopic="        << cfg.examTopic        << "\n"
+      << "examInstructions=" << cfg.examInstructions << "\n"
+      << "examFocusAreas="   << cfg.examFocusAreas   << "\n"
+      << "examBackend="      << cfg.examBackend      << "\n"
+      << "examApiKey="       << cfg.examApiKey       << "\n"
+      << "examOllamaModel="  << cfg.examOllamaModel  << "\n"
+      << "lastSession="      << cfg.lastSession      << "\n";
     return f.good();
 }
 
