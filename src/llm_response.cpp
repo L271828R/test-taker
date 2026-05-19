@@ -1,5 +1,6 @@
 #include "llm_response.h"
 #include <cctype>
+#include <sstream>
 
 static std::string trim(const std::string& s) {
     const std::string ws = " \t\r\n";
@@ -123,4 +124,39 @@ std::vector<std::string> ParseOllamaTags(const std::string& json) {
         if (!name.empty()) names.push_back(name);
     }
     return names;
+}
+
+std::pair<std::string, std::string> ParseGameChoices(const std::string& response) {
+    std::string correct, wrong;
+    std::istringstream ss(response);
+    std::string line;
+    while (std::getline(ss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind("CORRECT:", 0) == 0)
+            correct = trim(line.substr(8));
+        else if (line.rfind("WRONG:", 0) == 0)
+            wrong = trim(line.substr(6));
+    }
+    if (correct.empty() || wrong.empty()) return {"", ""};
+    return {correct, wrong};
+}
+
+std::vector<std::pair<std::string,std::string>>
+    ParseMultipleGameChoices(const std::string& response) {
+    std::vector<std::pair<std::string,std::string>> result;
+    std::istringstream ss(response);
+    std::string line, correct, wrong;
+    auto flush = [&]() {
+        if (!correct.empty() && !wrong.empty())
+            result.push_back({correct, wrong});
+        correct.clear(); wrong.clear();
+    };
+    while (std::getline(ss, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line == "---") { flush(); continue; }
+        if (line.rfind("CORRECT:", 0) == 0) correct = trim(line.substr(8));
+        else if (line.rfind("WRONG:",   0) == 0) wrong   = trim(line.substr(6));
+    }
+    flush();
+    return result;
 }

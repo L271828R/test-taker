@@ -7,12 +7,17 @@
 #include "markdown.h"
 #include "logger.h"
 #include "saved_convos.h"
+#include "game_data.h"
+#include "llm_response.h"
 #include <algorithm>
 #include <ctime>
 #include <filesystem>
 #include <sstream>
 #include <thread>
 #include <wx/app.h>
+#include <wx/filename.h>
+#include <wx/stdpaths.h>
+#include <wx/utils.h>
 
 namespace fs = std::filesystem;
 
@@ -867,6 +872,103 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
             + std::to_string(idx) + "']\");"
             "if(b){b.classList.add('saved');b.innerHTML='🔖 saved';}";
         m_webView->RunScript(script);
+        return;
+    }
+
+    if (url.StartsWith("testtaker://game/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(17).ToLong(&idx);
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const QuestionTurn& turn = m_turns[idx];
+        if (turn.explanation.empty()) return;
+
+        // Disable the button while generating to prevent double-launches.
+        std::string si = std::to_string(idx);
+        m_webView->RunScript(
+            "var g=document.querySelector(\"a[href='testtaker://game/" + si + "']\");"
+            "if(g){g.textContent='⏳ generating…';g.style.pointerEvents='none';}");
+
+        std::string question    = turn.question;
+        std::string explanation = turn.explanation;
+        LLMConfig   llmCfg     = m_llmCfg;
+        auto cancel = std::make_shared<std::atomic<bool>>(false);
+
+        std::thread([=]() {
+            // First batch: 4 questions.
+            LLMResult result = InvokeLLM(BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+
+            wxTheApp->CallAfter([=]() {
+                // Restore button
+                m_webView->RunScript(
+                    "var g=document.querySelector(\"a[href='testtaker://game/" + si + "']\");"
+                    "if(g){g.textContent='🎮 game';g.style.pointerEvents='';}");
+
+                if (!result.ok) {
+                    Logger::get().log("Game series LLM failed: " + result.error);
+                    return;
+                }
+                auto pairs = ParseMultipleGameChoices(result.text);
+                if (pairs.empty()) {
+                    Logger::get().log("Game series parse failed: " + result.text.substr(0, 200));
+                    return;
+                }
+
+                auto makeQuestions = [&](const std::vector<std::pair<std::string,std::string>>& p) {
+                    std::vector<GameData> out;
+                    for (auto& [correct, wrong] : p) {
+                        bool cia = (std::rand() % 2 == 0);
+                        GameData gd;
+                        gd.question   = question;
+                        gd.choiceA    = cia ? correct : wrong;
+                        gd.choiceB    = cia ? wrong   : correct;
+                        gd.correctIsA = cia;
+                        out.push_back(gd);
+                    }
+                    return out;
+                };
+
+                wxString tmpPath = wxFileName::CreateTempFileName("tt-game") + ".dat";
+                if (!WriteGameFiles(tmpPath.ToStdString(), makeQuestions(pairs))) {
+                    Logger::get().log("Could not write game data file");
+                    return;
+                }
+
+                wxFileName exeDir(wxStandardPaths::Get().GetExecutablePath());
+                wxString gameBin = exeDir.GetPath() + "/test-taker-game";
+                if (!wxFileExists(gameBin))
+                    gameBin = exeDir.GetPath() + "/../test-taker-game";
+                if (!wxFileExists(gameBin)) {
+                    Logger::get().log("test-taker-game binary not found near " + gameBin.ToStdString());
+                    return;
+                }
+
+                wxString cmd = "\"" + gameBin + "\" \"" + tmpPath + "\"";
+                wxExecute(cmd, wxEXEC_ASYNC);
+                Logger::get().log("Launched game: " + cmd.ToStdString());
+
+                // Second batch: 4 more questions appended while player is in the first batch.
+                std::string tmpStr = tmpPath.ToStdString();
+                std::thread([=]() {
+                    LLMResult r2 = InvokeLLM(
+                        BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                    if (!r2.ok) return;
+                    auto p2 = ParseMultipleGameChoices(r2.text);
+                    if (p2.empty()) return;
+                    std::vector<GameData> more;
+                    for (auto& [correct, wrong] : p2) {
+                        bool cia = (std::rand() % 2 == 0);
+                        GameData gd;
+                        gd.question   = question;
+                        gd.choiceA    = cia ? correct : wrong;
+                        gd.choiceB    = cia ? wrong   : correct;
+                        gd.correctIsA = cia;
+                        more.push_back(gd);
+                    }
+                    AppendGameFiles(tmpStr, more);
+                }).detach();
+            });
+        }).detach();
         return;
     }
 

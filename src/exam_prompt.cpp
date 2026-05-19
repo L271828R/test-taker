@@ -300,12 +300,13 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn:hover .note-btn { opacity:1; }
 .turn:hover .discuss-btn { opacity:1; }
 .turn:hover .save-btn { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn {
+.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn, .game-btn {
             opacity:0; transition:opacity 0.15s;
             background:none; border:1px solid var(--border);
             border-radius:4px; padding:0.15em 0.5em;
             font-size:0.82em; cursor:pointer; color:var(--text-muted);
             text-decoration:none; white-space:nowrap; }
+.turn:hover .game-btn { opacity:1; }
 .flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
 .note-btn.has-note { color:var(--link); border-color:var(--link); opacity:1; }
 .discuss-btn.has-chat { color:var(--link); border-color:var(--link); opacity:1; }
@@ -380,8 +381,11 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
             << "<a class='save-btn" << saveClass << "' href='testtaker://save/"
             << i << "'>" << saveLabel << "</a>"
             << "<a class='flag-btn" << flagClass << "' href='testtaker://flag/"
-            << i << "'>" << flagLabel << "</a>"
-            << "</div>"
+            << i << "'>" << flagLabel << "</a>";
+        if (!t.explanation.empty() && !t.silentSkip)
+            out << "<a class='game-btn' href='testtaker://game/"
+                << i << "'>&#x1F3AE; game</a>";
+        out << "</div>"
             << "<div class='question'>" << RenderMarkdown(t.question) << "</div>";
         if (t.silentSkip) {
             out << "<div class='verdict silent'>&#x23ED; silently skipped</div>";
@@ -504,5 +508,43 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
     }
 
     out << "<hr class='hist-separator'>\n";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildGameChoicesPrompt(const std::string& question,
+                                   const std::string& explanation) {
+    std::ostringstream out;
+    out << "You are creating a quiz challenge for a student.\n\n"
+        << "Question: " << question << "\n\n";
+    if (!explanation.empty()) {
+        std::string expl = explanation.size() > 350 ? explanation.substr(0, 350) : explanation;
+        out << "Explanation: " << expl << "\n\n";
+    }
+    out << "Write EXACTLY two short statements (each under 80 characters):\n"
+        << "CORRECT: a true statement that directly answers the question\n"
+        << "WRONG: a plausible but false statement about the same topic\n\n"
+        << "Reply with ONLY those two lines, nothing else.";
+    return out.str();
+}
+
+std::string BuildGameSeriesPrompt(const std::string& question,
+                                  const std::string& explanation,
+                                  int count) {
+    std::ostringstream out;
+    out << "You are creating quiz challenges for a student learning this topic.\n\n"
+        << "Original question: " << question << "\n\n";
+    if (!explanation.empty()) {
+        std::string expl = explanation.size() > 500 ? explanation.substr(0, 500) : explanation;
+        out << "Explanation: " << expl << "\n\n";
+    }
+    out << "Generate " << count << " different follow-up questions that test related aspects "
+        << "of the same topic. Each question should probe a different angle.\n\n"
+        << "For each question output EXACTLY two lines then a separator:\n"
+        << "CORRECT: <a true statement, under 80 chars>\n"
+        << "WRONG: <a plausible but false statement, under 80 chars>\n"
+        << "---\n\n"
+        << "Output ONLY those lines. No numbering, no extra text. "
+        << "The last block does not need a trailing ---.";
     return out.str();
 }

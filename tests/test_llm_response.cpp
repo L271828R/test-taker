@@ -152,5 +152,116 @@ int test_llm_response() {
         }
     }
 
+    // ── ParseGameChoices ──────────────────────────────────────────────────────
+
+    // Normal response
+    {
+        auto [c, w] = ParseGameChoices("CORRECT: The Rule of Five has five members.\nWRONG: The Rule of Five applies only to templates.");
+        bool ok = c == "The Rule of Five has five members."
+               && w == "The Rule of Five applies only to templates.";
+        if (!ok) {
+            std::cerr << "FAIL [parse-game-choices-normal]: c='" << c << "' w='" << w << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-game-choices-normal]\n";
+        }
+    }
+
+    // Leading whitespace on values
+    {
+        auto [c, w] = ParseGameChoices("CORRECT:  spaces trimmed\nWRONG:  also trimmed");
+        bool ok = c == "spaces trimmed" && w == "also trimmed";
+        if (!ok) {
+            std::cerr << "FAIL [parse-game-choices-trim]: c='" << c << "' w='" << w << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-game-choices-trim]\n";
+        }
+    }
+
+    // WRONG before CORRECT
+    {
+        auto [c, w] = ParseGameChoices("WRONG: Wrong answer here.\nCORRECT: Correct answer here.");
+        bool ok = c == "Correct answer here." && w == "Wrong answer here.";
+        if (!ok) {
+            std::cerr << "FAIL [parse-game-choices-reversed]: c='" << c << "' w='" << w << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-game-choices-reversed]\n";
+        }
+    }
+
+    // Missing WRONG line → both empty
+    {
+        auto [c, w] = ParseGameChoices("CORRECT: Something correct.");
+        bool ok = c.empty() && w.empty();
+        if (!ok) {
+            std::cerr << "FAIL [parse-game-choices-missing-wrong]: c='" << c << "' w='" << w << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-game-choices-missing-wrong]\n";
+        }
+    }
+
+    // Empty input → both empty
+    {
+        auto [c, w] = ParseGameChoices("");
+        bool ok = c.empty() && w.empty();
+        if (!ok) {
+            std::cerr << "FAIL [parse-game-choices-empty]: c='" << c << "' w='" << w << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-game-choices-empty]\n";
+        }
+    }
+
+    // ── ParseMultipleGameChoices ──────────────────────────────────────────────
+
+    // Two pairs separated by ---
+    {
+        std::string raw =
+            "CORRECT: Answer one.\nWRONG: Wrong one.\n---\n"
+            "CORRECT: Answer two.\nWRONG: Wrong two.";
+        auto pairs = ParseMultipleGameChoices(raw);
+        bool ok = pairs.size() == 2
+               && pairs[0].first  == "Answer one."
+               && pairs[0].second == "Wrong one."
+               && pairs[1].first  == "Answer two."
+               && pairs[1].second == "Wrong two.";
+        if (!ok) {
+            std::cerr << "FAIL [parse-multi-game-choices-two]: got " << pairs.size() << " pairs\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-multi-game-choices-two]\n";
+        }
+    }
+
+    // Incomplete block (missing WRONG) is skipped
+    {
+        std::string raw =
+            "CORRECT: Good.\nWRONG: Bad.\n---\n"
+            "CORRECT: Only correct, no wrong.";
+        auto pairs = ParseMultipleGameChoices(raw);
+        bool ok = pairs.size() == 1 && pairs[0].first == "Good.";
+        if (!ok) {
+            std::cerr << "FAIL [parse-multi-game-choices-skip-incomplete]: got " << pairs.size() << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-multi-game-choices-skip-incomplete]\n";
+        }
+    }
+
+    // Empty → empty vector
+    {
+        auto pairs = ParseMultipleGameChoices("");
+        bool ok = pairs.empty();
+        if (!ok) {
+            std::cerr << "FAIL [parse-multi-game-choices-empty]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [parse-multi-game-choices-empty]\n";
+        }
+    }
+
     return failures;
 }

@@ -72,6 +72,17 @@ struct HistoryGroup {
     std::vector<QuestionTurn> turns;
 };
 
+// Build a short LLM prompt that asks for one correct and one wrong statement
+// about the answer to a question. Response is parsed by ParseGameChoices().
+std::string BuildGameChoicesPrompt(const std::string& question,
+                                   const std::string& explanation);
+
+// Build a prompt that requests `count` follow-up question pairs (---separated).
+// Response is parsed by ParseMultipleGameChoices().
+std::string BuildGameSeriesPrompt(const std::string& question,
+                                  const std::string& explanation,
+                                  int count);
+
 // Render past-session groups as interactive history above the active session.
 // Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
 // Includes a clear-history link.

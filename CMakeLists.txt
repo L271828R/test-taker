@@ -136,6 +136,7 @@ set(SOURCES
     src/personality_lib.cpp
     src/saved_convos.cpp
     src/saved_panel.cpp
+    src/game_data.cpp
 )
 add_executable(test-taker ${SOURCES})
 add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
@@ -168,6 +169,7 @@ add_executable(test_test-taker
     tests/test_web_fetch.cpp
     tests/test_git_import.cpp
     tests/test_saved_convos.cpp
+    tests/test_game_data.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -192,6 +194,7 @@ add_executable(test_test-taker
     src/rag_logger.cpp
     src/saved_convos.cpp
     src/personality_lib.cpp
+    src/game_data.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
 target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})
@@ -208,3 +211,12 @@ if(APPLE)
 endif()
 
 install(TARGETS test-taker DESTINATION bin)
+
+# ── SDL2 quiz game subprocess ─────────────────────────────────────────────────
+find_package(SDL2  REQUIRED CONFIG HINTS /opt/homebrew/lib/cmake/SDL2)
+find_package(SDL2_ttf REQUIRED CONFIG HINTS /opt/homebrew/lib/cmake/SDL2_ttf)
+
+add_executable(test-taker-game game/main.cpp src/game_data.cpp)
+target_include_directories(test-taker-game PRIVATE src /opt/homebrew/include)
+target_link_libraries(test-taker-game PRIVATE SDL2::SDL2 SDL2_ttf::SDL2_ttf)
+set_target_properties(test-taker-game PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
