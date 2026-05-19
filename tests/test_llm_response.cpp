@@ -126,5 +126,31 @@ int test_llm_response() {
         }
     }
 
+    // BackendFromLabel("") must NOT return Clipboard — an empty/unset backend label
+    // (e.g. new project with no saved examBackend) should fall back to ClaudeP, not
+    // silently route all LLM calls through the clipboard.
+    {
+        bool ok = BackendFromLabel("") == LLMBackend::ClaudeP;
+        if (!ok) {
+            std::cerr << "FAIL [backend-empty-not-clipboard]: got "
+                      << static_cast<int>(BackendFromLabel("")) << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [backend-empty-not-clipboard]\n";
+        }
+    }
+
+    // LLMConfig default backend must not be Clipboard for the same reason.
+    {
+        LLMConfig cfg;
+        bool ok = cfg.backend != LLMBackend::Clipboard;
+        if (!ok) {
+            std::cerr << "FAIL [llmconfig-default-not-clipboard]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [llmconfig-default-not-clipboard]\n";
+        }
+    }
+
     return failures;
 }

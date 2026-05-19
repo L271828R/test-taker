@@ -4,7 +4,7 @@
 enum class LLMBackend { ClaudeP, CodexCLI, GeminiCLI, Ollama, API, Clipboard };
 
 struct LLMConfig {
-    LLMBackend  backend          = LLMBackend::Clipboard;
+    LLMBackend  backend          = LLMBackend::ClaudeP;
     std::string apiKey;
     std::string ollamaModel      = "llama3";
     std::string ollamaUrl        = "http://localhost:11434";
@@ -35,7 +35,7 @@ inline LLMBackend BackendFromLabel(const std::string& label) {
     if (label == "Gemini CLI")     return LLMBackend::GeminiCLI;
     if (label == "Ollama (local)") return LLMBackend::Ollama;
     if (label == "Anthropic API")  return LLMBackend::API;
-    return LLMBackend::Clipboard;
+    return LLMBackend::ClaudeP;
 }
 
 inline std::string BackendLabel(LLMBackend backend) {

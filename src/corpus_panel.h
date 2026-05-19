@@ -19,11 +19,15 @@ public:
 
 private:
     void OnAdd();
+    void OnAddURL();
+    void OnAddClipboard();
     void OnDelete();
     void OnOpen(wxListEvent& e);
     void RefreshList();
     void SetStatus(const std::string& msg);
     void ProcessFile(const std::string& filePath);
+    // Write text to <project>/corpus/<name>.txt and embed it.
+    void ProcessText(const std::string& name, const std::string& text);
 
     std::string             m_projectDir;
     std::string             m_ollamaUrl;
@@ -33,8 +37,10 @@ private:
     std::shared_ptr<std::atomic<bool>> m_cancel;
     std::thread m_worker;
 
-    wxListCtrl*   m_list    = nullptr;
-    wxStaticText* m_status  = nullptr;
-    wxButton*     m_addBtn  = nullptr;
-    wxButton*     m_delBtn  = nullptr;
+    wxListCtrl*   m_list      = nullptr;
+    wxStaticText* m_status    = nullptr;
+    wxButton*     m_addBtn    = nullptr;
+    wxButton*     m_urlBtn    = nullptr;
+    wxButton*     m_clipBtn   = nullptr;
+    wxButton*     m_delBtn    = nullptr;
 };

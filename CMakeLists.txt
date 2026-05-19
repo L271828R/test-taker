@@ -128,6 +128,7 @@ set(SOURCES
     src/corpus.cpp
     src/embeddings.cpp
     src/corpus_panel.cpp
+    src/web_fetch.cpp
     src/rag_logger.cpp
     src/focus_list_panel.cpp
     src/personality_panel.cpp
@@ -163,6 +164,7 @@ add_executable(test_test-taker
     tests/test_exam_prompt.cpp
     tests/test_turn_chat.cpp
     tests/test_corpus.cpp
+    tests/test_web_fetch.cpp
     tests/test_saved_convos.cpp
     src/config.cpp
     src/markdown.cpp
@@ -183,6 +185,7 @@ add_executable(test_test-taker
     src/turn_chat.cpp
     src/corpus.cpp
     src/embeddings.cpp
+    src/web_fetch.cpp
     src/rag_logger.cpp
     src/saved_convos.cpp
     src/personality_lib.cpp
