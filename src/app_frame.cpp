@@ -119,6 +119,18 @@ AppFrame::AppFrame()
 // ---------------------------------------------------------------------------
 void AppFrame::OnProjectActivated(const std::string& projectDir) {
     m_activeProjectDir = projectDir;
+
+    if (projectDir.empty()) {
+        m_newSessionPage->SyncProject("");
+        m_reviewPage->RefreshSessions("");
+        m_chatPage->SyncProject("", {}, m_darkMode);
+        m_corpusPage->SyncProject("", "");
+        m_savedPage->SyncProject("", m_darkMode);
+        m_examPage->Clear();
+        SetStatusText("No project open.");
+        return;
+    }
+
     RecordExamOpen(projectDir);
 
     // Propagate to tabs that need the active project

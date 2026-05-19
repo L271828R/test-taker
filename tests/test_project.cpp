@@ -331,5 +331,62 @@ int test_project() {
         }
     }
 
+    // ── IsProjectDeletable tests ─────────────────────────────────────────────
+
+    // Empty path → not deletable
+    {
+        bool ok = !IsProjectDeletable("", "/home/user/projects");
+        if (!ok) {
+            std::cerr << "FAIL [delete-empty-path]: should return false for empty path\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [delete-empty-path]\n";
+        }
+    }
+
+    // Root folder itself → not deletable
+    {
+        bool ok = !IsProjectDeletable("/home/user/projects", "/home/user/projects");
+        if (!ok) {
+            std::cerr << "FAIL [delete-root-folder]: should return false when path == defaultFolder\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [delete-root-folder]\n";
+        }
+    }
+
+    // Path outside the default folder → not deletable
+    {
+        bool ok = !IsProjectDeletable("/tmp/other", "/home/user/projects");
+        if (!ok) {
+            std::cerr << "FAIL [delete-outside-root]: should return false for path outside defaultFolder\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [delete-outside-root]\n";
+        }
+    }
+
+    // Valid project path inside default folder → deletable
+    {
+        bool ok = IsProjectDeletable("/home/user/projects/MyProject", "/home/user/projects");
+        if (!ok) {
+            std::cerr << "FAIL [delete-valid-path]: should return true for valid project path\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [delete-valid-path]\n";
+        }
+    }
+
+    // Nested path (project inside subfolder) → deletable
+    {
+        bool ok = IsProjectDeletable("/home/user/projects/CPP/CPP2", "/home/user/projects");
+        if (!ok) {
+            std::cerr << "FAIL [delete-nested-path]: should return true for nested project path\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [delete-nested-path]\n";
+        }
+    }
+
     return failures;
 }

@@ -53,6 +53,7 @@ private:
     void OnRefreshBtn(wxCommandEvent& evt);
     void OnSetFolderBtn(wxCommandEvent& evt);
 
+    void OnDeleteBtn(wxCommandEvent& evt);
     void OnTreeSelChanged(wxTreeEvent& evt);
     void OnTreeItemActivated(wxTreeEvent& evt);
     void OnTreeExpanding(wxTreeEvent& evt);
@@ -68,6 +69,7 @@ private:
     wxStaticText* m_statsLabel;
     wxButton*     m_activateBtn;
     wxButton*     m_renameBtn;
+    wxButton*     m_deleteBtn;
     wxButton*     m_newProjectBtn;
     wxButton*     m_newSubfolderBtn;
     wxButton*     m_setFolderBtn;

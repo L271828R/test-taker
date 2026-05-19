@@ -52,3 +52,7 @@ std::pair<int, int> TidbitLocation(const std::string& projectDir, int tidbitId);
 // Peek the next ID that will be assigned — does NOT consume it.
 int NextChapterId(const std::string& projectDir);
 int NextTidbitId(const std::string& projectDir);
+
+// Returns true when it is safe to delete projectPath: the path must be non-empty,
+// must not equal defaultFolder, and must be inside defaultFolder.
+bool IsProjectDeletable(const std::string& projectPath, const std::string& defaultFolder);

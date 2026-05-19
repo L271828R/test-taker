@@ -165,6 +165,14 @@ int NextTidbitId(const std::string& projectDir) {
     return ReadInt(ReadIndex(projectDir), "next_tb", 1);
 }
 
+bool IsProjectDeletable(const std::string& projectPath, const std::string& defaultFolder) {
+    if (projectPath.empty() || defaultFolder.empty()) return false;
+    if (projectPath == defaultFolder) return false;
+    std::string prefix = defaultFolder;
+    if (prefix.back() != '/') prefix += '/';
+    return projectPath.rfind(prefix, 0) == 0;
+}
+
 std::pair<int, int> TidbitLocation(const std::string& projectDir, int tidbitId) {
     auto m  = ReadIndex(projectDir);
     auto it = m.find("tb:" + std::to_string(tidbitId));

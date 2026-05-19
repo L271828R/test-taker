@@ -33,7 +33,8 @@ enum {
     ID_PP_REFRESH,
     ID_PP_SET_FOLDER,
     ID_PP_NEW_SUBFOLDER,
-    ID_PP_NEW_PROJECT
+    ID_PP_NEW_PROJECT,
+    ID_PP_DELETE
 };
 
 enum class SortOrder { Name, Created, Modified };
@@ -43,6 +44,7 @@ wxBEGIN_EVENT_TABLE(ProjectPanel, wxPanel)
     EVT_CHOICE(ID_PP_SORT,                  ProjectPanel::OnSortChanged)
     EVT_BUTTON(ID_PP_ACTIVATE,              ProjectPanel::OnActivateBtn)
     EVT_BUTTON(ID_PP_RENAME,               ProjectPanel::OnRenameBtn)
+    EVT_BUTTON(ID_PP_DELETE,               ProjectPanel::OnDeleteBtn)
     EVT_BUTTON(ID_PP_NEW_PROJECT,           ProjectPanel::OnNewProjectBtn)
     EVT_BUTTON(ID_PP_NEW_SUBFOLDER,         ProjectPanel::OnNewSubfolder)
     EVT_BUTTON(ID_PP_REFRESH,              ProjectPanel::OnRefreshBtn)
@@ -194,6 +196,10 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
     m_renameBtn->Disable();
     btnRow->Add(m_renameBtn, 0, wxRIGHT, 6);
 
+    m_deleteBtn = new wxButton(this, ID_PP_DELETE, "Delete…");
+    m_deleteBtn->Disable();
+    btnRow->Add(m_deleteBtn, 0, wxRIGHT, 6);
+
     m_newProjectBtn = new wxButton(this, ID_PP_NEW_PROJECT, "New Project…");
     m_newProjectBtn->Disable();
     btnRow->Add(m_newProjectBtn, 0, wxRIGHT, 6);
@@ -321,6 +327,7 @@ void ProjectPanel::RefreshProjects() {
     m_treeCtrl->DeleteAllItems();
     m_activateBtn->Disable();
     m_renameBtn->Disable();
+    m_deleteBtn->Disable();
     m_newSubfolderBtn->Disable();
     m_projectPathLabel->SetLabel("Select a project to see its path.");
     m_statsLabel->SetLabel(wxEmptyString);
@@ -425,6 +432,7 @@ void ProjectPanel::OnTreeSelChanged(wxTreeEvent&) {
     if (!tn) {
         m_activateBtn->Disable();
         m_renameBtn->Disable();
+        m_deleteBtn->Disable();
         m_projectPathLabel->SetLabel("Select a project to see its path.");
         m_statsLabel->SetLabel(wxEmptyString);
         return;
@@ -435,10 +443,12 @@ void ProjectPanel::OnTreeSelChanged(wxTreeEvent&) {
     if (tn->kind == TreeNode::Kind::Project) {
         m_activateBtn->Enable();
         m_renameBtn->Enable();
+        m_deleteBtn->Enable();
         m_statsLabel->SetLabel(wxString::FromUTF8(buildStats(tn->path)));
     } else {
         m_activateBtn->Disable();
         m_renameBtn->Enable();
+        m_deleteBtn->Disable();
         m_statsLabel->SetLabel(wxEmptyString);
     }
     Layout();
@@ -598,6 +608,44 @@ void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
         m_expandedPaths.insert(newFsPath.string());
 
     Logger::get().log("Renamed: " + oldPath + " -> " + newFsPath.string());
+    RefreshProjects();
+}
+
+void ProjectPanel::OnDeleteBtn(wxCommandEvent&) {
+    TreeNode* tn = SelectedNode();
+    if (!tn || tn->kind != TreeNode::Kind::Project) return;
+
+    AppConfig cfg = LoadConfig();
+    if (!IsProjectDeletable(tn->path, cfg.defaultFolder)) {
+        wxMessageBox("This project cannot be deleted — it is outside the projects folder.",
+                     "Delete Project", wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    wxString msg = wxString::FromUTF8(
+        "Permanently delete \"" + tn->name + "\" and all its files?\n\n"
+        "This cannot be undone.");
+    if (wxMessageBox(msg, "Delete Project",
+                     wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
+        return;
+
+    std::error_code ec;
+    fs::remove_all(fs::path(tn->path), ec);
+    if (ec) {
+        wxMessageBox(wxString::FromUTF8("Could not delete: " + ec.message()),
+                     "Delete Project", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    AppState st = LoadAppState();
+    bool wasActive = (st.currentProject == tn->path);
+    if (wasActive) {
+        st.currentProject = "";
+        SaveAppState(st);
+        if (m_openCallback) m_openCallback("");
+    }
+
+    Logger::get().log("Deleted project: " + tn->path);
     RefreshProjects();
 }
 
