@@ -6,13 +6,15 @@ struct SavedConvo {
     std::string date;
     std::string question;
     std::string explanation;
+    bool        fromGame = false;
 };
 
 // Append a Q&A pair to <projectDir>/saved_convos.md.
 bool AppendSavedConvo(const std::string& projectDir,
                       const std::string& question,
                       const std::string& explanation,
-                      const std::string& date);
+                      const std::string& date,
+                      bool fromGame = false);
 
 // Load all saved entries from <projectDir>/saved_convos.md.
 std::vector<SavedConvo> LoadSavedConvos(const std::string& projectDir);

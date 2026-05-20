@@ -37,14 +37,16 @@ static std::string decodeNL(const std::string& s) {
 bool AppendSavedConvo(const std::string& projectDir,
                       const std::string& question,
                       const std::string& explanation,
-                      const std::string& date) {
+                      const std::string& date,
+                      bool fromGame) {
     std::ofstream f(savedPath(projectDir), std::ios::app);
     if (!f) return false;
     f << ":::saved\n"
       << "date: " << date << "\n"
       << "Q: "    << encodeNL(question) << "\n"
-      << "E: "    << encodeNL(explanation) << "\n"
-      << ":::\n\n";
+      << "E: "    << encodeNL(explanation) << "\n";
+    if (fromGame) f << "src: game\n";
+    f << ":::\n\n";
     return f.good();
 }
 
@@ -73,6 +75,8 @@ std::vector<SavedConvo> LoadSavedConvos(const std::string& projectDir) {
             cur.question = decodeNL(line.substr(3));
         } else if (inBlock && line.rfind("E: ", 0) == 0) {
             cur.explanation = decodeNL(line.substr(3));
+        } else if (inBlock && line == "src: game") {
+            cur.fromGame = true;
         }
     }
     return convos;
@@ -90,8 +94,9 @@ bool DeleteSavedConvo(const std::string& projectDir, int index) {
         f << ":::saved\n"
           << "date: " << c.date << "\n"
           << "Q: "    << encodeNL(c.question) << "\n"
-          << "E: "    << encodeNL(c.explanation) << "\n"
-          << ":::\n\n";
+          << "E: "    << encodeNL(c.explanation) << "\n";
+        if (c.fromGame) f << "src: game\n";
+        f << ":::\n\n";
     }
     return f.good();
 }
@@ -118,6 +123,8 @@ std::string BuildSavedConvosHTML(const std::vector<SavedConvo>& convos) {
            padding:0.1em 0.45em; font-size:0.85em; cursor:pointer;
            color:var(--text-muted); text-decoration:none; line-height:1.4; }
 .del-btn:hover { color:#cf222e; border-color:#cf222e; }
+.game-badge { font-size:0.8em; margin-left:0.4em;
+              vertical-align:middle; opacity:0.8; }
 </style>
 )";
 
@@ -128,7 +135,9 @@ std::string BuildSavedConvosHTML(const std::vector<SavedConvo>& convos) {
         out << "<div class='saved-entry'>"
             << "<a class='del-btn' href='testtaker://delete-saved/"
             << fileIdx << "' title='Remove'>&#x2715;</a>"
-            << "<div class='saved-date'>" << EscapeHTML(c.date) << "</div>"
+            << "<div class='saved-date'>" << EscapeHTML(c.date)
+            << (c.fromGame ? "<span class='game-badge'>\xF0\x9F\x8E\xAE</span>" : "")
+            << "</div>"
             << "<div class='saved-q'>" << RenderMarkdown(c.question) << "</div>"
             << "<div class='saved-e'>" << RenderMarkdown(c.explanation) << "</div>"
             << "</div>\n";

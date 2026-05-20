@@ -639,6 +639,36 @@ int test_exam_prompt() {
         }
     }
 
+    // RenderHistoryGroups: game button appears for turns that have an explanation
+    {
+        QuestionTurn withExpl;
+        withExpl.question    = "What is a move constructor?";
+        withExpl.userAnswer  = "Transfers ownership.";
+        withExpl.score       = Score::Star4;
+        withExpl.explanation = "A move constructor transfers resources from an rvalue.";
+
+        QuestionTurn noExpl;
+        noExpl.question   = "What is RAII?";
+        noExpl.score      = Score::Skipped;
+        noExpl.silentSkip = true;
+
+        std::vector<HistoryGroup> groups;
+        groups.push_back({"Old session", "/path/old.md", {withExpl, noExpl}});
+
+        std::string html = RenderHistoryGroups(groups);
+
+        bool hasGame0  = html.find("testtaker://hgame/0/0") != std::string::npos;
+        bool noGame1   = html.find("testtaker://hgame/0/1") == std::string::npos;
+
+        if (!hasGame0 || !noGame1) {
+            std::cerr << "FAIL [render-history-groups-game]:"
+                      << " hasGame0=" << hasGame0 << " noGame1=" << noGame1 << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [render-history-groups-game]\n";
+        }
+    }
+
     // ParseScoredResponse: :::tidbit block in EXPLANATION is preserved with
     // correct newlines so RenderMarkdown can render it as a <details> widget.
     // The tidbit opener must be at the START of a line (\n:::tidbit), not
@@ -877,6 +907,48 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [tidbit-count-3]\n";
+        }
+    }
+
+    // ── BuildGameSeriesPrompt ────────────────────────────────────────────────
+
+    // Prompt must tell the LLM that CORRECT/WRONG are direct answers to the question.
+    {
+        std::string p = BuildGameSeriesPrompt("What is dynamic_cast?", "It downcasts safely.", 2);
+        bool hasQuestion = p.find("QUESTION:") != std::string::npos;
+        bool hasCorrect  = p.find("CORRECT:")  != std::string::npos;
+        bool hasWrong    = p.find("WRONG:")    != std::string::npos;
+        bool hasDirect   = p.find("direct answer") != std::string::npos
+                        || p.find("directly answers") != std::string::npos;
+        bool hasFalse    = p.find("false answer") != std::string::npos
+                        || p.find("incorrect answer") != std::string::npos
+                        || p.find("plausible but") != std::string::npos;
+        bool hasCount    = p.find("2") != std::string::npos;
+        bool ok = hasQuestion && hasCorrect && hasWrong && hasDirect && hasFalse && hasCount;
+        if (!ok) {
+            std::cerr << "FAIL [game-series-prompt-fields]:"
+                      << " q=" << hasQuestion << " c=" << hasCorrect
+                      << " w=" << hasWrong << " direct=" << hasDirect
+                      << " false=" << hasFalse << " count=" << hasCount << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [game-series-prompt-fields]\n";
+        }
+    }
+
+    // Prompt must include the original question and (truncated) explanation.
+    {
+        std::string longExpl(600, 'x');
+        std::string p = BuildGameSeriesPrompt("Q?", longExpl, 1);
+        bool hasQ    = p.find("Q?")    != std::string::npos;
+        bool notFull = p.find(longExpl) == std::string::npos; // truncated
+        bool ok = hasQ && notFull;
+        if (!ok) {
+            std::cerr << "FAIL [game-series-prompt-context]: hasQ=" << hasQ
+                      << " notFull=" << notFull << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [game-series-prompt-context]\n";
         }
     }
 

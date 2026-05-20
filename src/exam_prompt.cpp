@@ -433,7 +433,8 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
 .hist-turn:hover .note-btn  { opacity:1; }
 .hist-turn:hover .discuss-btn { opacity:1; }
 .hist-turn:hover .save-btn  { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn, .save-btn {
+.hist-turn:hover .game-btn  { opacity:1; }
+.flag-btn, .note-btn, .discuss-btn, .save-btn, .game-btn {
     opacity:0; transition:opacity 0.15s;
     background:none; border:1px solid var(--border);
     border-radius:4px; padding:0.15em 0.5em;
@@ -492,8 +493,11 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
                 << "<a class='save-btn" << saveClass << "' href='testtaker://hsave/" << gStr << "/" << iStr
                 << "'>" << saveLabel << "</a>"
                 << "<a class='flag-btn" << flagClass << "' href='testtaker://hflag/" << gStr << "/" << iStr
-                << "'>" << flagLabel << "</a>"
-                << "</div>"
+                << "'>" << flagLabel << "</a>";
+            if (!t.explanation.empty() && !t.silentSkip)
+                out << "<a class='game-btn' href='testtaker://hgame/" << gStr << "/" << iStr
+                    << "'>&#x1F3AE; game</a>";
+            out << "</div>"
                 << "<div class='hist-question'>" << RenderMarkdown(t.question) << "</div>"
                 << "<div class='hist-answer'>"
                 << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
@@ -538,12 +542,18 @@ std::string BuildGameSeriesPrompt(const std::string& question,
         std::string expl = explanation.size() > 500 ? explanation.substr(0, 500) : explanation;
         out << "Explanation: " << expl << "\n\n";
     }
-    out << "Generate " << count << " different follow-up questions that test related aspects "
-        << "of the same topic. Each question should probe a different angle.\n\n"
+    out << "Generate " << count << " follow-up questions that each test a different aspect "
+        << "of the same topic.\n\n"
+        << "Rules:\n"
+        << "- QUESTION must be a specific, answerable question (under 100 chars).\n"
+        << "- CORRECT must be a direct answer to that exact question (under 80 chars).\n"
+        << "- WRONG must be a plausible but incorrect answer to that same question (under 80 chars).\n"
+        << "- CORRECT and WRONG must both read as candidate answers to QUESTION — "
+        << "not general statements about the topic.\n\n"
         << "For each question output EXACTLY three lines then a separator:\n"
-        << "QUESTION: <a short question testing a related concept, under 100 chars>\n"
-        << "CORRECT: <a true statement that answers the question, under 80 chars>\n"
-        << "WRONG: <a plausible but false statement about the same concept, under 80 chars>\n"
+        << "QUESTION: <question>\n"
+        << "CORRECT: <direct answer — correct>\n"
+        << "WRONG: <direct answer — incorrect but plausible>\n"
         << "---\n\n"
         << "Output ONLY those lines. No numbering, no extra text. "
         << "The last block does not need a trailing ---.";

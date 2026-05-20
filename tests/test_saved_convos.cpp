@@ -137,6 +137,65 @@ int test_saved_convos() {
         }
     }
 
+    // fromGame flag round-trips through file
+    {
+        AppendSavedConvo(dir, "Game question?", "Correct: B", "2026-05-21", /*fromGame=*/true);
+        auto convos = LoadSavedConvos(dir);
+        bool ok = convos.size() == 3
+               && convos[2].question  == "Game question?"
+               && convos[2].fromGame  == true;
+        if (!ok) {
+            std::cerr << "FAIL [saved-fromgame-roundtrip]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [saved-fromgame-roundtrip]\n";
+        }
+    }
+
+    // Non-game entry has fromGame == false
+    {
+        auto convos = LoadSavedConvos(dir);
+        bool ok = convos.size() == 3
+               && convos[0].fromGame == false;   // RAII entry, no src: game
+        if (!ok) {
+            std::cerr << "FAIL [saved-fromgame-default-false]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [saved-fromgame-default-false]\n";
+        }
+    }
+
+    // BuildSavedConvosHTML shows game badge for fromGame entries
+    {
+        auto convos = LoadSavedConvos(dir);
+        std::string html = BuildSavedConvosHTML(convos);
+        bool ok = html.find("game-badge") != std::string::npos
+               || html.find("\xF0\x9F\x8E\xAE") != std::string::npos;  // 🎮 UTF-8
+        if (!ok) {
+            std::cerr << "FAIL [saved-fromgame-html-badge]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [saved-fromgame-html-badge]\n";
+        }
+    }
+
+    // DeleteSavedConvo preserves fromGame on surviving entries
+    {
+        // dir now has 3 entries: RAII(0,fromGame=false), multi-line(1,fromGame=false), game(2,fromGame=true)
+        bool ok = DeleteSavedConvo(dir, 1);  // remove multi-line
+        auto convos = LoadSavedConvos(dir);
+        bool loadOk = ok
+                   && convos.size() == 2
+                   && convos[0].fromGame == false
+                   && convos[1].fromGame == true;
+        if (!loadOk) {
+            std::cerr << "FAIL [saved-fromgame-delete-preserves]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [saved-fromgame-delete-preserves]\n";
+        }
+    }
+
     fs::remove_all(tmpDir);
     return failures;
 }
