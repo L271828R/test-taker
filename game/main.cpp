@@ -48,18 +48,28 @@ struct AudioCtx {
 };
 static AudioCtx gAudio;
 
+// Generative pentatonic melody (active when streak >= 4)
+static int   gGenNotes[64] = {};
+static int   gGenLen       = 32;
+static float gGenBpm       = 150.f;
+static bool  gGenMode      = false;  // read/written only under audio lock
+
 static void audioCallback(void*, Uint8* stream, int len) {
     Sint16* buf    = (Sint16*)stream;
     int     frames = len / 4;  // 2 channels × 2 bytes
 
     for (int i = 0; i < frames; ++i) {
         if (gAudio.sampLeft <= 0) {
-            gAudio.noteIdx = (gAudio.noteIdx + 1) % 16;
-            gAudio.sampLeft = (int)(AUDIO_FREQ * 60.f / THEME_BPM[gAudio.theme]);
-            gAudio.phase = 0.f;
+            int seqLen = gGenMode ? gGenLen : 16;
+            float bpm  = gGenMode ? gGenBpm : THEME_BPM[gAudio.theme];
+            gAudio.noteIdx  = (gAudio.noteIdx + 1) % seqLen;
+            gAudio.sampLeft = (int)(AUDIO_FREQ * 60.f / bpm);
+            gAudio.phase    = 0.f;
         }
 
-        int note = THEME_NOTES[gAudio.theme][gAudio.noteIdx];
+        int note = gGenMode
+            ? gGenNotes[gAudio.noteIdx]
+            : THEME_NOTES[gAudio.theme][gAudio.noteIdx];
         Sint16 s = 0;
         if (note > 0) {
             float freq = 440.f * std::pow(2.f, (note - 69) / 12.f);
@@ -100,6 +110,7 @@ static void setAudioTheme(int t) {
     gAudio.noteIdx  = 0;
     gAudio.sampLeft = 0;
     gAudio.phase    = 0.f;
+    gGenMode        = false;   // return to theme music on any theme change / death
     SDL_UnlockAudioDevice(gAudio.devId);
 }
 
@@ -350,6 +361,108 @@ static void drawWrapped(SDL_Renderer* r, TTF_Font* font, const std::string& text
 }
 
 // ── Game objects ──────────────────────────────────────────────────────────────
+
+// ── Fractal Brownian motion (fBm) for organic background / music ──────────────
+// Deterministic integer hash → float in [0, 1]
+static float noiseHash(int x, int y) {
+    unsigned n = (unsigned)(x * 1619 + y * 31337);
+    n ^= n << 13; n ^= n >> 17; n ^= n << 5;
+    return (n & 0x7fffffffu) / 2147483647.f;
+}
+// Bilinear value noise, smoothstep-interpolated
+static float valueNoise(float x, float y) {
+    int   ix = (int)std::floor(x), iy = (int)std::floor(y);
+    float fx = x - ix,             fy = y - iy;
+    float a = noiseHash(ix,   iy),  b = noiseHash(ix+1, iy);
+    float c = noiseHash(ix,   iy+1),d = noiseHash(ix+1, iy+1);
+    float ux = fx*fx*(3.f-2.f*fx), uy = fy*fy*(3.f-2.f*fy);
+    return a + (b-a)*ux + (c-a)*uy + (a-b-c+d)*ux*uy;
+}
+// 3-octave fBm: successive halvings of amplitude, doublings of frequency
+static float fbm(float x, float y) {
+    return 0.500f * valueNoise(x,         y)
+         + 0.250f * valueNoise(x*2.f+5.3f, y*2.f+1.7f)
+         + 0.125f * valueNoise(x*4.f+2.1f, y*4.f+8.9f);
+}
+
+// Per-theme aurora palette (r, g, b)
+static const int AURORA_C[5][3] = {
+    {255, 210,  80},   // Day:    warm golden shimmer
+    {220,  60, 180},   // Sunset: rose-purple aurora
+    {  0, 220, 120},   // Night:  classic green aurora borealis
+    {  0, 200, 255},   // Neon:   electric cyan discharge
+    {160,  60, 255},   // Cave:   bioluminescent violet
+};
+
+// Organic aurora overlay — fBm drives per-row color and opacity.
+// Activates at streak >= 4, ramps up in intensity over the next 4 streaks.
+static void drawAurora(SDL_Renderer* r, int theme, float scroll, int streak) {
+    if (streak < 4) return;
+    float intensity = std::min(1.f, (streak - 3) / 4.f);  // 0 → 1 across streaks 4 → 7
+    float t = scroll * 0.003f;                             // slow time drift
+
+    const int* ac = AURORA_C[theme];
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+    for (int y = GAME_TOP; y < WIN_H - 20; y += 2) {
+        float ny = (y - GAME_TOP) / (float)GAME_H;
+        // Two independent fBm layers: shape and texture
+        float n1 = fbm(ny * 2.8f + t * 0.4f,  t);
+        float n2 = fbm(ny * 5.0f + 7.3f,       t * 0.6f + 3.f);
+        float alpha = n1 * n1 * intensity * 0.65f;
+        if (alpha < 0.02f) continue;
+        // Modulate hue slightly with n2 for colour depth
+        Uint8 rr = (Uint8)(ac[0] * (0.55f + 0.45f * n2));
+        Uint8 gg = (Uint8)(ac[1] * (0.50f + 0.50f * n1));
+        Uint8 bb = (Uint8)(ac[2] * (0.55f + 0.45f * (1.f - n2)));
+        Uint8 aa = (Uint8)(alpha * 210.f);
+        SDL_SetRenderDrawColor(r, rr, gg, bb, aa);
+        SDL_RenderDrawLine(r, 0, y, WIN_W, y);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+// ── Generative pentatonic melody ──────────────────────────────────────────────
+// C major pentatonic over two octaves (A3 → A5), always consonant.
+static const int PENTA[10] = {57,60,62,64,67, 69,72,74,76,79};
+
+// Called (from main thread) when streak reaches 4+; lock-safe.
+static void generateMelody(unsigned seed) {
+    // Isolated LCG so this doesn't disturb the game's std::rand state.
+    auto lcg = [](unsigned& s) -> unsigned {
+        s = s * 1664525u + 1013904223u;
+        return s >> 16;
+    };
+
+    float bpm = 118.f + (float)(lcg(seed) % 90);   // 118–208 BPM
+    int   pos = 3 + (int)(lcg(seed) % 4);           // start near middle of scale
+
+    const int LEN = 32;
+    int notes[LEN];
+    for (int i = 0; i < LEN; ++i) {
+        unsigned r = lcg(seed);
+        if ((r & 0xFF) < 38) { notes[i] = 0; continue; }  // ~15% rest
+        int bias = (r >> 8) & 0xF;
+        int step = (bias < 2) ? -2 : (bias < 6) ? -1 : (bias < 8) ? 0
+                 : (bias < 12) ? 1 : 2;
+        // Elastic boundary: pull toward centre when at edges
+        if (pos <= 1) step += 1;
+        if (pos >= 8) step -= 1;
+        pos = std::max(0, std::min(9, pos + step));
+        notes[i] = PENTA[pos];
+    }
+
+    SDL_LockAudioDevice(gAudio.devId);
+    for (int i = 0; i < LEN; ++i) gGenNotes[i] = notes[i];
+    gGenLen     = LEN;
+    gGenBpm     = bpm;
+    gGenMode    = true;
+    gAudio.noteIdx  = 0;
+    gAudio.sampLeft = 0;
+    gAudio.phase    = 0.f;
+    SDL_UnlockAudioDevice(gAudio.devId);
+}
+
 // ── Themed background renderer ────────────────────────────────────────────────
 static void drawBackground(SDL_Renderer* r, int theme, float scroll) {
     const VisTheme& vt = VIS_THEMES[theme];
@@ -509,6 +622,7 @@ static void resetPipes(State& s) {
 }
 
 static void resetState(State& s, int qIdx, int qTotal) {
+    setAudioTheme(gTheme);     // snap back to theme music; clears gGenMode
     s.bird  = {130.f, GAME_TOP + GAME_H / 2.f, 0.f};
     resetPipes(s);
     s.phase      = Phase::Playing;
@@ -547,6 +661,8 @@ static void advanceKeepBird(State& s) {
     s.flashTimer = 50;
     gTheme = nextTheme();
     setAudioTheme(gTheme);
+    if (streak >= 4)
+        generateMelody((unsigned)(SDL_GetTicks() ^ (unsigned)(streak * 8191u)));
 }
 
 // ── Pixel-art pipe helpers ────────────────────────────────────────────────────
@@ -1153,6 +1269,7 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
         fillRect(ren, 0, 0, WIN_W, QBAR_H, C_BG);
         drawBackground(ren, gTheme, gBgScroll);
+        drawAurora(ren, gTheme, gBgScroll, state.streak);
 
         for (const auto& p : state.pipes) {
             if (p.isDecision) drawDecisionPipe(ren, p);
