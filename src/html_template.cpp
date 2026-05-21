@@ -173,6 +173,23 @@ details.tidbit summary::-webkit-details-marker{display:none}
 details.tidbit[open] summary{border-bottom:1px solid var(--border)}
 .tidbit-body{padding:12px 16px}
 .tidbit-body p:last-child{margin-bottom:0}
+/* carousel replaces stacked tidbits when count > 1 */
+.tidbit-carousel{
+  border:1px solid var(--border);border-radius:6px;
+  margin-bottom:16px;background:var(--surface);
+}
+.tidbit-carousel-header{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 14px;font-style:italic;color:var(--text-muted);user-select:none;
+}
+.tidbit-carousel-nav{display:flex;align-items:center;gap:6px}
+.tidbit-carousel-counter{font-size:.8em;opacity:.75}
+.tidbit-carousel-arrow{
+  background:none;border:1px solid var(--border);border-radius:4px;
+  color:var(--text-muted);cursor:pointer;font-size:1.1em;
+  padding:0 7px;line-height:1.5;transition:color .12s,border-color .12s;
+}
+.tidbit-carousel-arrow:hover{color:var(--text);border-color:var(--text-muted)}
 
 /* ── Conversation ───────────────────────────────────────────────────────── */
 details.conversation{
@@ -359,6 +376,76 @@ document.querySelectorAll('h2[data-ch-id]').forEach(function(h2) {
   });
   h2.appendChild(btn);
 });
+
+// ── Tidbit carousel: group consecutive tidbits, show one at a time with › ──
+(function() {
+  var all = Array.from(document.querySelectorAll('details.tidbit'));
+  var visited = new Set();
+  all.forEach(function(el) {
+    if (visited.has(el)) return;
+    var group = [el];
+    var sib = el.nextElementSibling;
+    while (sib && sib.classList && sib.classList.contains('tidbit')) {
+      group.push(sib); sib = sib.nextElementSibling;
+    }
+    group.forEach(function(e) { visited.add(e); });
+    if (group.length < 2) return;
+
+    var speakers = group.map(function(d) {
+      var s = d.querySelector('summary'); return s ? s.textContent.trim() : '';
+    });
+    var bodies = group.map(function(d) {
+      var b = d.querySelector('.tidbit-body'); return b ? b.innerHTML : '';
+    });
+
+    var carousel = document.createElement('div');
+    carousel.className = 'tidbit-carousel';
+    carousel.dataset.cur = '0';
+
+    var hdr = document.createElement('div');
+    hdr.className = 'tidbit-carousel-header';
+
+    var spk = document.createElement('span');
+    spk.textContent = '💬 ' + speakers[0];
+
+    var nav = document.createElement('span');
+    nav.className = 'tidbit-carousel-nav';
+
+    var ctr = document.createElement('span');
+    ctr.className = 'tidbit-carousel-counter';
+    ctr.textContent = '1 / ' + group.length;
+
+    var arr = document.createElement('button');
+    arr.className = 'tidbit-carousel-arrow';
+    arr.textContent = '›';
+
+    nav.appendChild(ctr); nav.appendChild(arr);
+    hdr.appendChild(spk); hdr.appendChild(nav);
+    carousel.appendChild(hdr);
+
+    var panels = bodies.map(function(html, idx) {
+      var p = document.createElement('div');
+      p.className = 'tidbit-body';
+      p.innerHTML = html;
+      if (idx > 0) p.hidden = true;
+      carousel.appendChild(p);
+      return p;
+    });
+
+    arr.addEventListener('click', function() {
+      var cur = parseInt(carousel.dataset.cur);
+      panels[cur].hidden = true;
+      cur = (cur + 1) % group.length;
+      panels[cur].hidden = false;
+      carousel.dataset.cur = cur;
+      spk.textContent = '💬 ' + speakers[cur];
+      ctr.textContent = (cur + 1) + ' / ' + group.length;
+    });
+
+    el.parentNode.insertBefore(carousel, el);
+    group.forEach(function(e) { e.parentNode.removeChild(e); });
+  });
+})();
 
 // ── Zoom state ───────────────────────────────────────────────────────────
 let zmScale = 1, zmTX = 0, zmTY = 0;

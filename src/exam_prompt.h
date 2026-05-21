@@ -83,6 +83,19 @@ std::string BuildGameSeriesPrompt(const std::string& question,
                                   const std::string& explanation,
                                   int count);
 
+// Build a deep-dive prompt for a question the user got wrong or partially right.
+// Response includes full explanation + mermaid diagram if applicable + code if applicable.
+std::string BuildLearnMorePrompt(const std::string& question,
+                                 const std::string& briefExplanation);
+
+// Build a hint prompt: nudges the student without revealing the answer.
+std::string BuildHintPrompt(const std::string& question);
+
+// Build a hint for a game question (choiceA vs choiceB) without revealing which is correct.
+std::string BuildGameHintPrompt(const std::string& question,
+                                const std::string& choiceA,
+                                const std::string& choiceB);
+
 // Render past-session groups as interactive history above the active session.
 // Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
 // Includes a clear-history link.

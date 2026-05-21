@@ -26,6 +26,7 @@ enum {
     ID_EXAM_SEND = wxID_HIGHEST + 100,
     ID_EXAM_SKIP,
     ID_EXAM_SILENT_SKIP,
+    ID_EXAM_HINT,
     ID_EXAM_FLAG,
     ID_EXAM_ABANDON,
 };
@@ -34,6 +35,7 @@ wxBEGIN_EVENT_TABLE(ExamPanel, wxPanel)
     EVT_BUTTON(ID_EXAM_SEND,        ExamPanel::OnSend)
     EVT_BUTTON(ID_EXAM_SKIP,        ExamPanel::OnSkip)
     EVT_BUTTON(ID_EXAM_SILENT_SKIP, ExamPanel::OnSilentSkip)
+    EVT_BUTTON(ID_EXAM_HINT,        ExamPanel::OnHint)
     EVT_BUTTON(ID_EXAM_FLAG,        ExamPanel::OnFlag)
     EVT_BUTTON(ID_EXAM_ABANDON,     ExamPanel::OnAbandon)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, ExamPanel::OnWebViewNav)
@@ -90,6 +92,8 @@ ExamPanel::ExamPanel(wxWindow* parent,
     m_skipBtn       = new wxButton(m_leftPanel, ID_EXAM_SKIP,        "I don't know");
     m_silentSkipBtn = new wxButton(m_leftPanel, ID_EXAM_SILENT_SKIP, wxString::FromUTF8("Skip \xe2\x8f\xad"));
     m_silentSkipBtn->SetToolTip("Skip this question silently — not sent to the LLM");
+    m_hintBtn    = new wxButton(m_leftPanel, ID_EXAM_HINT,    wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
+    m_hintBtn->SetToolTip("Get a nudge without revealing the answer");
     m_flagBtn    = new wxButton(m_leftPanel, ID_EXAM_FLAG,    "Flag for review");
     m_abandonBtn = new wxButton(m_leftPanel, ID_EXAM_ABANDON, "End Session");
 
@@ -98,12 +102,22 @@ ExamPanel::ExamPanel(wxWindow* parent,
     btnCol->Add(m_sendBtn,       0, wxEXPAND | wxBOTTOM, 4);
     btnCol->Add(m_skipBtn,       0, wxEXPAND | wxBOTTOM, 4);
     btnCol->Add(m_silentSkipBtn, 0, wxEXPAND | wxBOTTOM, 4);
+    btnCol->Add(m_hintBtn,       0, wxEXPAND | wxBOTTOM, 4);
     btnCol->Add(m_flagBtn,       0, wxEXPAND | wxBOTTOM, 4);
     btnCol->Add(m_abandonBtn,    0, wxEXPAND);
     inputRow->Add(btnCol, 0, wxEXPAND);
 
+    // Hint strip — hidden until a hint arrives
+    m_hintCtrl = new wxTextCtrl(m_leftPanel, wxID_ANY, "",
+        wxDefaultPosition, wxSize(-1, 56),
+        wxTE_MULTILINE | wxTE_READONLY | wxTE_NO_VSCROLL | wxBORDER_NONE);
+    m_hintCtrl->SetBackgroundColour(wxColour(255, 251, 230));
+    m_hintCtrl->SetForegroundColour(wxColour(100, 70, 0));
+    m_hintCtrl->Hide();
+
     m_statusLabel = new wxStaticText(m_leftPanel, wxID_ANY, "");
 
+    leftSizer->Add(m_hintCtrl, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
     leftSizer->Add(inputRow, 0, wxEXPAND | wxALL, 6);
     leftSizer->Add(m_statusLabel, 0, wxLEFT | wxBOTTOM, 8);
     m_leftPanel->SetSizer(leftSizer);
@@ -127,6 +141,7 @@ ExamPanel::ExamPanel(wxWindow* parent,
     // Start idle — no active session yet.
     m_sendBtn->Disable();
     m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+    m_hintBtn->Disable();
     m_flagBtn->Disable();
     m_abandonBtn->Disable();
     Render();
@@ -198,6 +213,7 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_chatPanel->Reset();
     if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
 
+    Render(true);  // show history + loading state at the bottom immediately
     RequestFirstQuestion();
 }
 
@@ -247,6 +263,7 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     if (complete) {
         m_sendBtn->Disable();
         m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+        m_hintBtn->Disable();
         m_flagBtn->Enable(!turns.empty());
         m_abandonBtn->Disable();
         m_statusLabel->SetLabel("Session complete. See Review tab for results.");
@@ -254,6 +271,7 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
         // Session was interrupted mid-way — re-enable input, ask next question.
         m_sendBtn->Enable();
         m_skipBtn->Enable(); m_silentSkipBtn->Enable();
+        m_hintBtn->Enable();
         m_flagBtn->Enable(!turns.empty());
         m_abandonBtn->Enable();
         int next = (int)turns.size() + 1;
@@ -294,6 +312,7 @@ void ExamPanel::StartDrill(const std::string& projectDir,
 
     m_sendBtn->Enable();
     m_skipBtn->Enable(); m_silentSkipBtn->Enable();
+    m_hintBtn->Enable();
     m_flagBtn->Enable();
     m_abandonBtn->Enable();
 
@@ -308,6 +327,7 @@ void ExamPanel::RequestFirstQuestion() {
     m_statusLabel->SetLabel("Asking first question…");
     m_sendBtn->Disable();
     m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+    m_hintBtn->Disable();
 
     ExamConfig  examCfg    = m_cfg;
     LLMConfig   llmCfg     = m_llmCfg;
@@ -345,6 +365,10 @@ void ExamPanel::RequestFirstQuestion() {
             m_statusLabel->SetLabel("Question 1 of " + std::to_string(m_cfg.totalQuestions));
             m_sendBtn->Enable();
             m_skipBtn->Enable(); m_silentSkipBtn->Enable();
+            m_hintBtn->Enable();
+            m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
+            m_hintCtrl->Clear(); m_hintCtrl->Hide();
+            m_leftPanel->GetSizer()->Layout();
             Render(true);  // scroll to bottom to show the new question
         });
     }).detach();
@@ -356,6 +380,7 @@ void ExamPanel::RequestNextQuestion() {
     m_busy = true;
     m_sendBtn->Disable();
     m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+    m_hintBtn->Disable();
     m_statusLabel->SetLabel("Asking next question…");
 
     ExamConfig  examCfg    = m_cfg;
@@ -403,6 +428,10 @@ void ExamPanel::RequestNextQuestion() {
                                     + " of " + std::to_string(m_cfg.totalQuestions));
             m_sendBtn->Enable();
             m_skipBtn->Enable(); m_silentSkipBtn->Enable();
+            m_hintBtn->Enable();
+            m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
+            m_hintCtrl->Clear(); m_hintCtrl->Hide();
+            m_leftPanel->GetSizer()->Layout();
             Render(true);  // scroll to bottom to show the new question
         });
     }).detach();
@@ -414,6 +443,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
     m_busy = true;
     m_sendBtn->Disable();
     m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+    m_hintBtn->Disable();
     m_statusLabel->SetLabel("Scoring…");
 
     int         remaining       = m_cfg.totalQuestions - (int)m_turns.size() - 1;
@@ -445,6 +475,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 Logger::get().log("ExamPanel score error: " + result.error);
                 m_sendBtn->Enable();
                 m_skipBtn->Enable(); m_silentSkipBtn->Enable();
+                m_hintBtn->Enable();
                 return;
             }
 
@@ -478,6 +509,10 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                     + " of " + std::to_string(m_cfg.totalQuestions));
                 m_sendBtn->Enable();
                 m_skipBtn->Enable(); m_silentSkipBtn->Enable();
+                m_hintBtn->Enable();
+                m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
+                m_hintCtrl->Clear(); m_hintCtrl->Hide();
+                m_leftPanel->GetSizer()->Layout();
                 m_answerCtrl->Clear();
             } else {
                 // Session complete — keep lastSessionFile so Exam tab can show
@@ -487,6 +522,9 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 m_statusLabel->SetLabel("Session complete! See Review tab for results.");
                 m_sendBtn->Disable();
                 m_skipBtn->Disable(); m_silentSkipBtn->Disable();
+                m_hintBtn->Disable();
+                m_hintCtrl->Clear(); m_hintCtrl->Hide();
+                m_leftPanel->GetSizer()->Layout();
                 m_abandonBtn->Disable();
                 if (m_onComplete) m_onComplete(m_sessionFile);
             }
@@ -560,8 +598,13 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
         deepdiveBtn = "<a id='deepdive-btn' href='testtaker://deepdive' "
                       "title='Set focus areas for remaining questions'>&#x1F3AF;</a>";
 
+    body << "<div id='page-bottom'></div>";
     if (scrollToBottom)
-        body << "<script>window.scrollTo(0,document.body.scrollHeight);</script>";
+        body << "<script>requestAnimationFrame(function(){"
+                "requestAnimationFrame(function(){"
+                "var b=document.getElementById('page-bottom');"
+                "if(b)b.scrollIntoView({behavior:'instant'});"
+                "});});</script>";
 
     return BuildHTML(extraCSS + overlay + deepdiveBtn + body.str(), "Exam", m_darkMode);
 }
@@ -602,6 +645,36 @@ void ExamPanel::OnSilentSkip(wxCommandEvent&) {
         if (m_onComplete) m_onComplete(m_sessionFile);
         Render(true);
     }
+}
+
+// ---------------------------------------------------------------------------
+void ExamPanel::OnHint(wxCommandEvent&) {
+    if (m_busy || m_currentQuestion.empty()) return;
+
+    m_hintBtn->SetLabel("⏳ …");
+    m_hintBtn->Disable();
+
+    std::string question = m_currentQuestion;
+    LLMConfig   llmCfg   = m_llmCfg;
+
+    std::thread([=]() {
+        LLMResult result = InvokeLLM(BuildHintPrompt(question), llmCfg);
+        wxTheApp->CallAfter([=]() {
+            std::string hint = result.ok ? result.text : "(could not fetch hint)";
+            // Strip leading/trailing whitespace
+            while (!hint.empty() && (hint.front() == '\n' || hint.front() == ' '))
+                hint.erase(hint.begin());
+            while (!hint.empty() && (hint.back() == '\n' || hint.back() == ' '))
+                hint.pop_back();
+
+            m_hintCtrl->SetValue(wxString::FromUTF8("💡 " + hint));
+            m_hintCtrl->Show();
+            m_leftPanel->GetSizer()->Layout();
+
+            m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
+            m_hintBtn->Enable();
+        });
+    }).detach();
 }
 
 static std::string QuestionSnippet(const std::string& q) {
@@ -876,6 +949,46 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         return;
     }
 
+    if (url.StartsWith("testtaker://learnmore/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(22).ToLong(&idx);  // "testtaker://learnmore/" is 22 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const auto& t = m_turns[idx];
+        if (t.explanation.empty()) return;
+
+        std::string idxStr = std::to_string(idx);
+        m_webView->RunScript(
+            "var b=document.querySelector(\"a[href='testtaker://learnmore/" + idxStr + "']\");"
+            "if(b){b.classList.add('saving');b.innerHTML='&#x23F3; loading…';b.style.pointerEvents='none';}");
+
+        std::string question    = t.question;
+        std::string explanation = t.explanation;
+        LLMConfig   llmCfg      = m_llmCfg;
+        std::string projectDir  = m_projectDir;
+        auto        onSaved     = m_onSavedConvo;
+
+        std::thread([=]() {
+            LLMResult result = InvokeLLM(BuildLearnMorePrompt(question, explanation), llmCfg);
+            wxTheApp->CallAfter([=]() {
+                // Restore button regardless of outcome
+                m_webView->RunScript(
+                    "var b=document.querySelector(\"a[href='testtaker://learnmore/" + idxStr + "']\");"
+                    "if(b){b.classList.remove('saving');b.classList.add('done');"
+                    "b.innerHTML='&#x1F4D6; saved';b.style.pointerEvents='none';}");
+
+                if (!result.text.empty() && !projectDir.empty()) {
+                    std::time_t now = std::time(nullptr);
+                    char dateBuf[16];
+                    std::strftime(dateBuf, sizeof(dateBuf), "%Y-%m-%d", std::localtime(&now));
+                    AppendSavedConvo(projectDir, question, result.text, dateBuf);
+                    if (onSaved) onSaved();
+                }
+            });
+        }).detach();
+        return;
+    }
+
     if (url.StartsWith("testtaker://hgame/")) {
         evt.Veto();
         long g = -1, i = -1;
@@ -954,6 +1067,8 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                 std::string tmpStr    = tmpPath.ToStdString();
                 std::string wantFile  = tmpStr + ".want";
                 std::string saveFile  = tmpStr + ".save";
+                std::string hintReq   = tmpStr + ".hintreq";
+                std::string hintResp  = tmpStr + ".hintresp";
                 std::string pDir      = m_projectDir;
                 auto        onSaved   = m_onSavedConvo;
                 std::thread([=]() {
@@ -973,6 +1088,25 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                                               std::localtime(&now));
                                 AppendSavedConvo(pDir, q, "Correct answer: " + a, buf, true);
                                 if (onSaved) wxTheApp->CallAfter(onSaved);
+                            }
+                        }
+                        if (fs::exists(hintReq)) {
+                            std::string hq, ha, hb;
+                            { std::ifstream hf(hintReq);
+                              std::string ln;
+                              while (std::getline(hf, ln)) {
+                                  if (ln.rfind("Q: ", 0) == 0) hq = ln.substr(3);
+                                  if (ln.rfind("A: ", 0) == 0) ha = ln.substr(3);
+                                  if (ln.rfind("B: ", 0) == 0) hb = ln.substr(3);
+                              } }
+                            try { fs::remove(hintReq); } catch (...) {}
+                            if (!hq.empty()) {
+                                LLMResult hr = InvokeLLM(
+                                    BuildGameHintPrompt(hq, ha, hb), llmCfg);
+                                if (hr.ok && !hr.text.empty()) {
+                                    std::ofstream hrf(hintResp);
+                                    hrf << hr.text;
+                                }
                             }
                         }
                         if (fs::exists(wantFile)) {
@@ -1085,10 +1219,12 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                 wxExecute(cmd, wxEXEC_ASYNC);
                 Logger::get().log("Launched game with " + std::to_string(all.size()) + " questions");
 
-                // Monitor .want and .save signals from the game process.
+                // Monitor .want, .save, and .hintreq signals from the game process.
                 std::string tmpStr   = tmpPath.ToStdString();
                 std::string wantFile = tmpStr + ".want";
                 std::string saveFile = tmpStr + ".save";
+                std::string hintReq  = tmpStr + ".hintreq";
+                std::string hintResp = tmpStr + ".hintresp";
                 auto        onSaved  = m_onSavedConvo;
                 std::thread([=]() {
                     for (;;) {
@@ -1108,6 +1244,25 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                                 AppendSavedConvo(projectDir, q,
                                                  "Correct answer: " + a, buf, true);
                                 if (onSaved) wxTheApp->CallAfter(onSaved);
+                            }
+                        }
+                        if (fs::exists(hintReq)) {
+                            std::string hq, ha, hb;
+                            { std::ifstream hf(hintReq);
+                              std::string ln;
+                              while (std::getline(hf, ln)) {
+                                  if (ln.rfind("Q: ", 0) == 0) hq = ln.substr(3);
+                                  if (ln.rfind("A: ", 0) == 0) ha = ln.substr(3);
+                                  if (ln.rfind("B: ", 0) == 0) hb = ln.substr(3);
+                              } }
+                            try { fs::remove(hintReq); } catch (...) {}
+                            if (!hq.empty()) {
+                                LLMResult hr = InvokeLLM(
+                                    BuildGameHintPrompt(hq, ha, hb), llmCfg);
+                                if (hr.ok && !hr.text.empty()) {
+                                    std::ofstream hrf(hintResp);
+                                    hrf << hr.text;
+                                }
                             }
                         }
                         if (fs::exists(wantFile)) {

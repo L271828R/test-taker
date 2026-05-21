@@ -6,6 +6,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "game_data.h"
@@ -26,25 +27,61 @@ static void logf(const char* fmt, ...) {
 }
 static void logClose() { if (gLog) { fclose(gLog); gLog = nullptr; } }
 
-// ── Chiptune audio (square-wave oscillator, built-in SDL2 audio) ─────────────
+// ── Chiptune audio (square-wave melody + synthesised drums) ──────────────────
 static constexpr int AUDIO_FREQ = 44100;
 
-// 5 themes × 16 notes (MIDI, 0 = rest).  Two octaves for variety.
+// 5 themes × 16 notes (MIDI, 0 = rest). Quarter-note pace.
+// ADHD-friendly: energetic BPMs, short catchy hooks, rhythmic rests.
 static const int THEME_NOTES[5][16] = {
-    {64,67,72,71, 69,67,64,60, 64,67,72,74, 72,71,69,67},  // Day:    C major ascend
-    {67,71,74,76, 74,71,67,64, 62,64,67,71, 74,76,74,71},  // Sunset: G major warmth
-    {57,60,64,67, 64,60,57, 0, 55,57,60,64, 67,64,62,60},  // Night:  A minor + rests
-    {64,67,71,74, 71,67,64,62, 64,69,71,74, 76,74,71,69},  // Neon:   E minor driving
-    {62,65,69, 0, 69,65,62,60, 65,69,72, 0, 72,69,65,62},  // Cave:   D minor brooding
+    {60, 0,64,67,  69,67,64, 0,  65, 0,67,72,  71,69,67,60},  // Groove: C major
+    {67, 0,71, 0,  74, 0,72,71,  69,71, 0,74,  76,74,71, 0},  // Bounce: G major
+    {64,67, 0,69,  71, 0,74,71,  69, 0,67,64,  67,69,71, 0},  // Drive:  E minor penta
+    {65, 0,69, 0,  72,69,65, 0,  67, 0,70, 0,  72,74,72,69},  // Pulse:  F major
+    {62, 0,66,69,  71,69,66, 0,  67,69, 0,74,  73,71,69,62},  // Spark:  D major
 };
-static const float THEME_BPM[5] = {160.f, 120.f, 80.f, 210.f, 95.f};
+static const float THEME_BPM[5] = {140.f, 152.f, 168.f, 145.f, 158.f};
+
+// Drum patterns: 5 themes × 16 steps (16th-note grid, 1 = hit)
+static const int DRUM_KICK[5][16] = {
+    {1,0,0,0, 0,0,0,0, 1,0,0,0, 0,0,0,0},  // Groove: beats 1 & 3
+    {1,0,0,0, 0,0,1,0, 1,0,0,1, 0,0,0,0},  // Bounce: syncopated
+    {1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0},  // Drive:  four-on-the-floor
+    {1,0,0,0, 0,0,1,0, 1,0,0,0, 0,1,0,0},  // Pulse:  groove kick
+    {1,0,1,0, 0,0,1,0, 1,0,0,0, 1,0,1,0},  // Spark:  busy
+};
+static const int DRUM_SNARE[5][16] = {
+    {0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0},  // Groove: beats 2 & 4
+    {0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0},  // Bounce
+    {0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0},  // Drive
+    {0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1},  // Pulse: + ghost on 4-and
+    {0,0,0,0, 1,0,1,0, 0,0,0,0, 1,0,0,0},  // Spark: + ghost on 2-and
+};
+static const int DRUM_HAT[5][16] = {
+    {1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0},  // Groove: 8th notes
+    {1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1},  // Bounce: every 16th
+    {1,0,1,1, 1,0,1,0, 1,0,1,1, 1,0,1,0},  // Drive:  offbeat push
+    {1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0},  // Pulse:  8th notes
+    {1,1,0,1, 1,1,0,1, 1,1,0,1, 1,1,0,1},  // Spark:  driving pattern
+};
 
 struct AudioCtx {
-    SDL_AudioDeviceID devId   = 0;
-    int   theme               = 0;
-    int   noteIdx             = 0;
-    int   sampLeft            = 0;
-    float phase               = 0.f;
+    SDL_AudioDeviceID devId         = 0;
+    int   theme                     = 0;
+    int   noteIdx                   = 0;
+    int   sampLeft                  = 0;
+    float phase                     = 0.f;
+    // Drum sequencer
+    int   drumStep                  = 0;
+    int   drumSampLeft              = 0;
+    // Kick: sine-wave pitch sweep (punchy thud)
+    float kickAmp                   = 0.f;
+    float kickFreq                  = 80.f;
+    float kickPhase                 = 0.f;
+    // Snare & hat: filtered noise bursts
+    float snareAmp                  = 0.f;
+    float hatAmp                    = 0.f;
+    // Thread-local LCG for noise (no std::rand in audio thread)
+    Uint32 rng                      = 0xBEEF1234u;
 };
 static AudioCtx gAudio;
 
@@ -56,28 +93,81 @@ static bool  gGenMode      = false;  // read/written only under audio lock
 
 static void audioCallback(void*, Uint8* stream, int len) {
     Sint16* buf    = (Sint16*)stream;
-    int     frames = len / 4;  // 2 channels × 2 bytes
+    int     frames = len / 4;  // stereo 16-bit
 
     for (int i = 0; i < frames; ++i) {
+        float bpm = gGenMode ? gGenBpm : THEME_BPM[gAudio.theme];
+
+        // ── Melody note advance ───────────────────────────────────────────────
         if (gAudio.sampLeft <= 0) {
-            int seqLen = gGenMode ? gGenLen : 16;
-            float bpm  = gGenMode ? gGenBpm : THEME_BPM[gAudio.theme];
+            int seqLen      = gGenMode ? gGenLen : 16;
             gAudio.noteIdx  = (gAudio.noteIdx + 1) % seqLen;
             gAudio.sampLeft = (int)(AUDIO_FREQ * 60.f / bpm);
             gAudio.phase    = 0.f;
         }
 
-        int note = gGenMode
-            ? gGenNotes[gAudio.noteIdx]
-            : THEME_NOTES[gAudio.theme][gAudio.noteIdx];
-        Sint16 s = 0;
+        // ── Drum step advance (16th notes = quarter-note / 4) ────────────────
+        if (gAudio.drumSampLeft <= 0) {
+            gAudio.drumSampLeft = (int)(AUDIO_FREQ * 60.f / (bpm * 4.f));
+            gAudio.drumStep     = (gAudio.drumStep + 1) % 16;
+            int t = gAudio.theme;
+            if (DRUM_KICK [t][gAudio.drumStep]) {
+                gAudio.kickAmp   = 1.0f;
+                gAudio.kickFreq  = 150.f;
+                gAudio.kickPhase = 0.f;
+            }
+            if (DRUM_SNARE[t][gAudio.drumStep]) gAudio.snareAmp = 1.0f;
+            if (DRUM_HAT  [t][gAudio.drumStep]) gAudio.hatAmp   = 1.0f;
+        }
+
+        // ── Melody: square wave ───────────────────────────────────────────────
+        int note = gGenMode ? gGenNotes[gAudio.noteIdx]
+                            : THEME_NOTES[gAudio.theme][gAudio.noteIdx];
+        float melodyF = 0.f;
         if (note > 0) {
             float freq = 440.f * std::pow(2.f, (note - 69) / 12.f);
-            s = gAudio.phase < 0.5f ? 5500 : -5500;
+            melodyF = (gAudio.phase < 0.5f) ? 1.f : -1.f;
             gAudio.phase += freq / AUDIO_FREQ;
             if (gAudio.phase >= 1.f) gAudio.phase -= 1.f;
         }
+
+        // ── Kick: sine sweep, pitch falls from ~150 Hz to ~40 Hz ─────────────
+        float kickF = 0.f;
+        if (gAudio.kickAmp > 0.001f) {
+            kickF = gAudio.kickAmp * std::sin(gAudio.kickPhase * 6.28318f);
+            gAudio.kickPhase += gAudio.kickFreq / AUDIO_FREQ;
+            if (gAudio.kickPhase >= 1.f) gAudio.kickPhase -= 1.f;
+            gAudio.kickFreq  *= 0.9999f;   // pitch sweep down
+            gAudio.kickAmp   *= 0.9993f;   // ~220 ms decay
+        }
+
+        // ── Snare: noise burst, ~100 ms decay ────────────────────────────────
+        float snareF = 0.f;
+        if (gAudio.snareAmp > 0.001f) {
+            gAudio.rng  = gAudio.rng * 1664525u + 1013904223u;
+            float noise = (float)(int)(gAudio.rng >> 1) / (float)0x40000000;
+            snareF = gAudio.snareAmp * noise;
+            gAudio.snareAmp *= 0.9985f;
+        }
+
+        // ── Hi-hat: very short noise burst, ~8 ms decay ──────────────────────
+        float hatF = 0.f;
+        if (gAudio.hatAmp > 0.001f) {
+            gAudio.rng  = gAudio.rng * 1664525u + 1013904223u;
+            float noise = (float)(int)(gAudio.rng >> 1) / (float)0x40000000;
+            hatF = gAudio.hatAmp * noise;
+            gAudio.hatAmp *= 0.984f;
+        }
+
+        // ── Mix (melody softer to give drums room) ────────────────────────────
+        float mix = melodyF * 3800.f
+                  + kickF   * 6500.f
+                  + snareF  * 3000.f
+                  + hatF    * 1100.f;
+        Sint16 s = (Sint16)std::max(-30000.f, std::min(30000.f, mix));
+
         --gAudio.sampLeft;
+        --gAudio.drumSampLeft;
         buf[i * 2]     = s;
         buf[i * 2 + 1] = s;
     }
@@ -106,11 +196,16 @@ static void closeAudio() {
 static void setAudioTheme(int t) {
     if (!gAudio.devId) return;
     SDL_LockAudioDevice(gAudio.devId);
-    gAudio.theme    = t;
-    gAudio.noteIdx  = 0;
-    gAudio.sampLeft = 0;
-    gAudio.phase    = 0.f;
-    gGenMode        = false;   // return to theme music on any theme change / death
+    gAudio.theme        = t;
+    gAudio.noteIdx      = 0;
+    gAudio.sampLeft     = 0;
+    gAudio.phase        = 0.f;
+    gAudio.drumStep     = 0;
+    gAudio.drumSampLeft = 0;
+    gAudio.kickAmp      = 0.f;
+    gAudio.snareAmp     = 0.f;
+    gAudio.hatAmp       = 0.f;
+    gGenMode            = false;   // return to theme music on any theme change / death
     SDL_UnlockAudioDevice(gAudio.devId);
 }
 
@@ -573,7 +668,8 @@ struct Pipe {
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
-enum class Phase { Playing, Result, Complete };
+enum class Phase     { Playing, Result, Complete };
+enum class HintState { None, Waiting, Shown };
 
 struct State {
     Bird              bird;
@@ -595,6 +691,8 @@ struct State {
     int               plantPipeX  = 0;   // left edge of pipe the plant emerges from
     int               plantCapY   = 0;   // y of the cap top (head rises upward from here)
     bool              gameSaved   = false; // user has saved this question to Saved Convos
+    HintState         hintState   = HintState::None;
+    std::string       hintText;
 };
 
 static float randGapY() {
@@ -637,6 +735,8 @@ static void resetState(State& s, int qIdx, int qTotal) {
     s.streak     = 0;
     s.plantTimer = -1;
     s.gameSaved  = false;
+    s.hintState  = HintState::None;
+    s.hintText.clear();
     s.qIdx       = qIdx;
     s.qTotal     = qTotal;
 }
@@ -967,8 +1067,9 @@ static void drawResult(SDL_Renderer* r, TTF_Font* lgFont, TTF_Font* medFont,
         return;
     }
 
-    // Wrong answer — show what the correct answer was.
-    drawTextCX(r, lgFont,  "Wrong!",                 cx, mid - 90, C_ERR);
+    // Wrong answer or crash — title differs based on cause of death.
+    const char* title = s.decided ? "Wrong!" : "Crash!";
+    drawTextCX(r, lgFont,  title,                    cx, mid - 90, C_ERR);
     drawTextCX(r, smFont,  "The correct answer was:", cx, mid - 40, C_MUTED);
     std::string corr = d.correctIsA ? ("A: " + d.choiceA) : ("B: " + d.choiceB);
     drawWrapped(r, medFont, corr, cx - 280, mid - 18, 560, 70, C_TEXT);
@@ -1088,7 +1189,6 @@ int main(int argc, char* argv[]) {
     bool quit   = false;
     bool allWon = false;
     while (!quit) {
-        const GameData& data = questions[std::min(state.qIdx, state.qTotal - 1)];
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
@@ -1102,6 +1202,16 @@ int main(int argc, char* argv[]) {
                         state.paused = !state.paused;
                     } else if (sym == SDLK_q) {
                         quit = true;
+                    } else if (state.paused && sym == SDLK_h
+                               && state.phase == Phase::Playing
+                               && state.hintState == HintState::None) {
+                        const GameData& gd = questions[std::min(state.qIdx, (int)questions.size() - 1)];
+                        std::ofstream hf(dataFilePath + ".hintreq");
+                        hf << "Q: " << gd.question << "\n"
+                           << "A: " << gd.choiceA  << "\n"
+                           << "B: " << gd.choiceB  << "\n";
+                        state.hintState = HintState::Waiting;
+                        logf("HINT requested q=%d", state.qIdx);
                     } else if (!state.paused && (sym == SDLK_SPACE || sym == SDLK_UP)) {
                         if (state.phase == Phase::Playing && state.alive && !state.decided) {
                             state.bird.vy = FLAP;
@@ -1142,6 +1252,23 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        // ── Poll for hint response ────────────────────────────────────────────
+        if (state.hintState == HintState::Waiting && state.frame % 30 == 0) {
+            std::ifstream rf(dataFilePath + ".hintresp");
+            if (rf.good()) {
+                std::ostringstream ss;
+                ss << rf.rdbuf();
+                rf.close();
+                state.hintText = ss.str();
+                while (!state.hintText.empty() &&
+                       (state.hintText.back() == '\n' || state.hintText.back() == ' '))
+                    state.hintText.pop_back();
+                std::remove((dataFilePath + ".hintresp").c_str());
+                state.hintState = HintState::Shown;
+                logf("HINT received: %s", state.hintText.substr(0, 60).c_str());
+            }
+        }
+
         // ── Poll file for new questions every ~2 s ────────────────────────────
         if (state.frame % 120 == 0 && state.frame > 0) {
             auto fresh = ReadGameFiles(dataFilePath);
@@ -1159,6 +1286,9 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+
+        // Rebind after any potential vector reallocation above.
+        const GameData& data = questions[std::min(state.qIdx, state.qTotal - 1)];
 
         // ── Signal for more questions when 2 away from the end ───────────────
         if (!state.wantSent && state.phase == Phase::Playing
@@ -1324,16 +1454,33 @@ int main(int argc, char* argv[]) {
         if (state.paused) {
             // Light veil — game is still fully visible beneath.
             SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(ren, 0, 0, 0, 120);
+            SDL_SetRenderDrawColor(ren, 0, 0, 0, 140);
             SDL_Rect fullGame{0, GAME_TOP, WIN_W, GAME_H};
             SDL_RenderFillRect(ren, &fullGame);
             SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
 
             int cx  = WIN_W / 2;
             int mid = GAME_TOP + GAME_H / 2;
-            drawTextCX(ren, lgFont,  "Paused",         cx, mid - 52, C_TEXT);
-            drawTextCX(ren, medFont, "ESC to resume",  cx, mid +  8, C_MUTED);
-            drawTextCX(ren, smFont,  "Q to quit",      cx, mid + 38, C_MUTED);
+            drawTextCX(ren, lgFont,  "Paused",        cx, mid - 60, C_TEXT);
+            drawTextCX(ren, medFont, "ESC to resume", cx, mid -  4, C_MUTED);
+
+            // Hint section (only while playing, not on result/complete screen)
+            if (state.phase == Phase::Playing) {
+                if (state.hintState == HintState::None) {
+                    drawTextCX(ren, smFont, "H  \xe2\x80\x94  hint",  cx, mid + 26, C_MUTED);
+                } else if (state.hintState == HintState::Waiting) {
+                    SDL_Color amber = {220, 160, 30, 255};
+                    drawTextCX(ren, smFont, "\xe2\x8f\xb3 fetching hint\xe2\x80\xa6", cx, mid + 26, amber);
+                } else {
+                    SDL_Color gold  = {240, 200, 50, 255};
+                    SDL_Color light = {230, 230, 230, 255};
+                    drawTextCX(ren, smFont, "\xf0\x9f\x92\xa1 Hint:", cx, mid + 22, gold);
+                    drawWrapped(ren, smFont, state.hintText,
+                                cx - 260, mid + 44, 520, 110, light);
+                }
+            }
+
+            drawTextCX(ren, smFont, "Q  \xe2\x80\x94  quit", cx, mid + 150, C_MUTED);
 
             // Debug: bird position
             std::string dbg = "bird y=" + std::to_string((int)state.bird.y)

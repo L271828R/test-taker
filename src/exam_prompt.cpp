@@ -201,8 +201,8 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
                "1. Score the answer:       SCORE: 1  through  SCORE: 5\n"
                "   1 = completely wrong, 2 = major gaps, 3 = half right,\n"
                "   4 = mostly right with minor gaps, 5 = fully right\n"
-               "2. Explain the answer:     EXPLANATION: <state the correct answer and explain it in 2-5 sentences."
-               " Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer."
+               "2. Explain the answer:     EXPLANATION: <state the correct answer and explain it in 3-6 sentences."
+               " Include a concrete example when helpful. Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer."
             << mermaidHint << tidbitInstruction << ">\n";
 
         if (questionsRemaining > 0) {
@@ -300,13 +300,16 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn:hover .note-btn { opacity:1; }
 .turn:hover .discuss-btn { opacity:1; }
 .turn:hover .save-btn { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn, .game-btn {
+.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn, .game-btn, .learn-btn {
             opacity:0; transition:opacity 0.15s;
             background:none; border:1px solid var(--border);
             border-radius:4px; padding:0.15em 0.5em;
             font-size:0.82em; cursor:pointer; color:var(--text-muted);
             text-decoration:none; white-space:nowrap; }
 .turn:hover .game-btn { opacity:1; }
+.turn:hover .learn-btn { opacity:1; }
+.learn-btn.saving { color:#9a6700; border-color:#9a6700; opacity:1; }
+.learn-btn.done   { color:#1a7f37; border-color:#1a7f37; opacity:1; }
 .flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
 .note-btn.has-note { color:var(--link); border-color:var(--link); opacity:1; }
 .discuss-btn.has-chat { color:var(--link); border-color:var(--link); opacity:1; }
@@ -385,6 +388,11 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
         if (!t.explanation.empty() && !t.silentSkip)
             out << "<a class='game-btn' href='testtaker://game/"
                 << i << "'>&#x1F3AE; game</a>";
+        // "learn more" appears only for wrong/partial answers (score 1-3)
+        if (!t.silentSkip && !t.explanation.empty() &&
+            (t.score == Score::Star1 || t.score == Score::Star2 || t.score == Score::Star3))
+            out << "<a class='learn-btn' href='testtaker://learnmore/"
+                << i << "'>&#x1F4D6; learn more</a>";
         out << "</div>"
             << "<div class='question'>" << RenderMarkdown(t.question) << "</div>";
         if (t.silentSkip) {
@@ -557,5 +565,59 @@ std::string BuildGameSeriesPrompt(const std::string& question,
         << "---\n\n"
         << "Output ONLY those lines. No numbering, no extra text. "
         << "The last block does not need a trailing ---.";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildLearnMorePrompt(const std::string& question,
+                                 const std::string& briefExplanation) {
+    std::ostringstream out;
+    out << "You are an expert teacher. A student got the following question wrong or only partially right.\n\n"
+        << "Question: " << question << "\n\n";
+    if (!briefExplanation.empty()) {
+        out << "Brief explanation already shown: " << briefExplanation << "\n\n";
+    }
+    out << "Write a thorough deep-dive explanation so the student truly understands this topic. "
+           "Write in plain markdown.\n\n"
+        << "Requirements:\n"
+        << "- Begin with a clear, direct statement of the correct answer.\n"
+        << "- Explain the underlying concept in depth (5-10 sentences).\n"
+        << "- Include at least one concrete, practical example.\n"
+        << "- If a diagram would help understanding, add a ```mermaid``` fenced code block.\n"
+        << "- If the topic involves code, include a short illustrative ```code``` fenced block.\n"
+        << "- Use plain markdown (headers, bullets, fenced blocks are fine). No preamble, no sign-off.\n";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildHintPrompt(const std::string& question) {
+    std::ostringstream out;
+    out << "A student is stuck on this exam question and needs a hint.\n\n"
+        << "Question: " << question << "\n\n"
+        << "Give a Socratic hint in 1-3 sentences that nudges them toward the answer "
+           "WITHOUT stating or implying the answer itself.\n"
+        << "Rules:\n"
+        << "- Point to the right concept, framework, or angle to think from.\n"
+        << "- Do NOT use phrases like 'the answer is', 'the correct answer', 'you should say'.\n"
+        << "- Do NOT give away what the answer is, even partially.\n"
+        << "- Be concise. No preamble (do not start with 'Sure!' or 'Here's a hint:').\n";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildGameHintPrompt(const std::string& question,
+                                const std::string& choiceA,
+                                const std::string& choiceB) {
+    std::ostringstream out;
+    out << "A student is playing a quiz game and is stuck on this question.\n\n"
+        << "Question: " << question << "\n"
+        << "A: " << choiceA << "\n"
+        << "B: " << choiceB << "\n\n"
+        << "Give a Socratic hint in 1-2 sentences that helps them figure out which "
+           "choice is correct, WITHOUT revealing which one is right.\n"
+        << "Rules:\n"
+        << "- Point to the concept or fact that distinguishes true from false.\n"
+        << "- Never say 'A is correct', 'B is wrong', or anything equivalent.\n"
+        << "- Be concise. No preamble.\n";
     return out.str();
 }

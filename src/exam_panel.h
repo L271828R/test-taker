@@ -76,9 +76,11 @@ private:
     wxButton*         m_sendBtn         = nullptr;
     wxButton*         m_skipBtn         = nullptr;
     wxButton*         m_silentSkipBtn   = nullptr;
+    wxButton*         m_hintBtn         = nullptr;
     wxButton*         m_flagBtn         = nullptr;
-    wxButton*         m_abandonBtn   = nullptr;
-    wxStaticText*     m_statusLabel  = nullptr;
+    wxButton*         m_abandonBtn      = nullptr;
+    wxTextCtrl*       m_hintCtrl        = nullptr;
+    wxStaticText*     m_statusLabel     = nullptr;
 
     void RequestFirstQuestion();
     void RequestNextQuestion();
@@ -89,6 +91,7 @@ private:
     void OnSend(wxCommandEvent&);
     void OnSkip(wxCommandEvent&);
     void OnSilentSkip(wxCommandEvent&);
+    void OnHint(wxCommandEvent&);
     void OnFlag(wxCommandEvent&);
     void OnAbandon(wxCommandEvent&);
     void OnWebViewNav(wxWebViewEvent&);
