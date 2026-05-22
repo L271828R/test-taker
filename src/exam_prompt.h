@@ -106,12 +106,13 @@ std::string BuildWhyNotPerfectPrompt(const std::string& question,
 // Data-driven personality system.
 // Each entry drives URL handlers, dropdown menus, chat-bubble labels, and prompts.
 struct PersonalityDef {
-    std::string slug;       // URL path segment: "monkey", "caveman", etc.
-    std::string category;   // matches PersonalityCategory::id
-    std::string menuLabel;  // HTML for the dropdown item (may contain entity refs)
-    std::string displayQ;   // UTF-8 label shown in the chat bubble
-    std::string preamble;   // prompt text before the Q / answer / explanation block
-    std::string closing;    // prompt text after the explanation block
+    std::string slug;         // URL path segment: "monkey", "caveman", etc.
+    std::string category;     // matches PersonalityCategory::id
+    std::string menuLabel;    // HTML for the dropdown item (may contain entity refs)
+    std::string displayQ;     // UTF-8 label shown in the chat bubble
+    std::string preamble;     // prompt text before the Q / answer / explanation block
+    std::string closing;      // prompt text after the explanation block
+    std::string subcategory;  // optional: groups this item into a named flyout submenu
 };
 
 // An ordered group of personalities that shares one dropdown button.

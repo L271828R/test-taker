@@ -256,6 +256,20 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     m_cfg.difficulty     = hdr.difficulty;
     m_cfg.totalQuestions = hdr.totalQuestions;
     m_cfg.projectContext.clear();
+    {
+        ProjectConfig pcfg = LoadConfig(projectDir);
+        auto splitPipe = [](const std::string& s) {
+            std::vector<std::string> v;
+            std::istringstream ss(s);
+            std::string tok;
+            while (std::getline(ss, tok, '|'))
+                if (!tok.empty()) v.push_back(tok);
+            return v;
+        };
+        m_cfg.personalities = splitPipe(pcfg.personalities);
+        m_cfg.moreOfTopics  = splitPipe(pcfg.examMoreOf);
+        m_cfg.lessOfTopics  = splitPipe(pcfg.examLessOf);
+    }
 
     bool complete = (int)turns.size() >= hdr.totalQuestions;
     m_active = !complete;

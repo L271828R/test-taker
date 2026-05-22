@@ -180,6 +180,16 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
 .chat-explain-menu a { display:block; padding:5px 11px; color:var(--text);
   text-decoration:none; font-size:.82em; white-space:nowrap; }
 .chat-explain-menu a:hover { background:var(--surface-hover,rgba(0,0,0,.06)); }
+.chat-explain-menu .sub-wrap { position:relative; }
+.chat-explain-menu .sub-label { display:block; padding:5px 11px; font-size:.82em;
+  color:var(--text); white-space:nowrap; cursor:default; }
+.chat-explain-menu .sub-label::after { content:' \25BA'; font-size:0.75em; }
+.chat-explain-menu .sub-wrap:hover .sub-menu,
+.chat-explain-menu .sub-wrap:focus-within .sub-menu { display:block; }
+.chat-explain-menu .sub-menu { display:none; position:absolute; left:100%; top:-2px;
+  min-width:180px; background:var(--surface);
+  border:1px solid var(--border); border-radius:4px;
+  box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:1000; padding:2px 0; }
 .chat-q { background:)" + qBg + R"(; border-radius:8px 8px 8px 2px;
   padding:10px 14px; margin-bottom:6px; font-weight:500; }
 .chat-a { background:)" + aBg + R"(; border-radius:2px 8px 8px 8px;
