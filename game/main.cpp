@@ -282,6 +282,7 @@ static const VisTheme VIS_THEMES[5] = {
 };
 static int      gTheme       = 0;
 static float    gBgScroll    = 0.f;
+static bool     gMuted       = false;
 static SDL_Rect gSaveBtnRect = {0, 0, 0, 0};  // set each frame by drawResult
 
 // ── Theme shuffle queue ───────────────────────────────────────────────────────
@@ -1202,6 +1203,10 @@ int main(int argc, char* argv[]) {
                         state.paused = !state.paused;
                     } else if (sym == SDLK_q) {
                         quit = true;
+                    } else if (sym == SDLK_m && state.paused) {
+                        gMuted = !gMuted;
+                        SDL_PauseAudioDevice(gAudio.devId, gMuted ? 1 : 0);
+                        logf("MUTE %s", gMuted ? "on" : "off");
                     } else if (state.paused && sym == SDLK_h
                                && state.phase == Phase::Playing
                                && state.hintState == HintState::None) {
@@ -1480,6 +1485,11 @@ int main(int argc, char* argv[]) {
                 }
             }
 
+            {
+                SDL_Color mc = gMuted ? SDL_Color{220, 100, 80, 255} : C_MUTED;
+                const char* ml = gMuted ? "M  \xe2\x80\x94  unmute" : "M  \xe2\x80\x94  mute";
+                drawTextCX(ren, smFont, ml, cx, mid + 130, mc);
+            }
             drawTextCX(ren, smFont, "Q  \xe2\x80\x94  quit", cx, mid + 150, C_MUTED);
 
             // Debug: bird position

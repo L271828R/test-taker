@@ -21,10 +21,14 @@ public:
 
     // Load the context for a specific exam turn and show the panel.
     // turnIndex is the zero-based index into m_turns / the session file.
+    // starterMessage: auto-fired LLM prompt on open (shown as starterDisplayQ bubble).
+    // starterDisplayQ: label for the auto-fired starter bubble (defaults to monkey/banana label).
     void OpenTurn(const QuestionTurn& turn,
                   int                 turnIndex,
                   const std::string&  sessionFile,
-                  const LLMConfig&    llmCfg);
+                  const LLMConfig&    llmCfg,
+                  const std::string&  starterMessage  = "",
+                  const std::string&  starterDisplayQ = "");
 
     // Clear state (called when a new session starts).
     void Reset();

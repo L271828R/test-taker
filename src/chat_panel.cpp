@@ -1,6 +1,7 @@
 #include "chat_panel.h"
 #include "conversation.h"
 #include "corpus.h"
+#include "exam_prompt.h"
 #include "html_template.h"
 #include "markdown.h"
 #include "meta.h"
@@ -125,10 +126,14 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
         bool isSaved = m_savedIndices.count(i) > 0;
         std::string saveClass = isSaved ? " saved" : "";
         std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
+        std::string si = std::to_string(i);
         body += "<div class='chat-turn'>"
                 "<div class='chat-toolbar'>"
-                "<a class='chat-save-btn" + saveClass + "' href='testtaker://chat-save/"
-                + std::to_string(i) + "'>" + saveLabel + "</a>"
+                "<a class='chat-save-btn" + saveClass + "' href='testtaker://chat-save/" + si + "'>" + saveLabel + "</a>"
+                + RenderPersonalityDropdowns(
+                    "testtaker://chat-explain/", "/" + si,
+                    "chat-explain-drop", "chat-explain-btn", "chat-explain-menu")
+                + "<a class='chat-floater-btn' href='testtaker://chat-learnmore/" + si + "' title='Deep dive: learn more'>&#x1F4D6; learn&nbsp;more</a>"
                 "</div>"
                 "<div class='chat-q'>" + EscapeHTML(t.question) + "</div>"
                 "<div class='chat-a'>" + RenderMarkdown(t.answer) + "</div>"
@@ -152,12 +157,29 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
     const std::string extraCSS = R"(<style>
 .chat-turn { margin-bottom:18px; }
 .chat-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; }
-.chat-turn:hover .chat-save-btn { opacity:1; }
-.chat-save-btn { opacity:0; transition:opacity 0.15s;
+.chat-turn:hover .chat-save-btn,
+.chat-turn:hover .chat-floater-btn { opacity:1; }
+.chat-save-btn, .chat-floater-btn {
+  opacity:0; transition:opacity 0.15s;
   background:none; border:1px solid var(--border); border-radius:4px;
   padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
   color:var(--text-muted); text-decoration:none; white-space:nowrap; }
 .chat-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
+.chat-floater-btn:hover { border-color:#9a6700; color:#9a6700; }
+.chat-explain-drop { position:relative; display:inline-block; opacity:0; transition:opacity 0.15s; }
+.chat-turn:hover .chat-explain-drop { opacity:1; }
+.chat-explain-btn { background:none; border:1px solid var(--border); border-radius:4px;
+  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
+  color:var(--text-muted); white-space:nowrap; }
+.chat-explain-drop:hover .chat-explain-menu,
+.chat-explain-drop:focus-within .chat-explain-menu { display:block; }
+.chat-explain-menu { display:none; position:absolute; top:100%; left:0;
+  min-width:160px; background:var(--surface);
+  border:1px solid var(--border); border-radius:4px;
+  box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:999; padding:2px 0; }
+.chat-explain-menu a { display:block; padding:5px 11px; color:var(--text);
+  text-decoration:none; font-size:.82em; white-space:nowrap; }
+.chat-explain-menu a:hover { background:var(--surface-hover,rgba(0,0,0,.06)); }
 .chat-q { background:)" + qBg + R"(; border-radius:8px 8px 8px 2px;
   padding:10px 14px; margin-bottom:6px; font-weight:500; }
 .chat-a { background:)" + aBg + R"(; border-radius:2px 8px 8px 8px;
@@ -241,6 +263,35 @@ void ChatPanel::OnClearChat(wxCommandEvent&) {
 }
 
 // ---------------------------------------------------------------------------
+void ChatPanel::FireAsNewTurn(const std::string& displayQuestion,
+                               const std::string& prompt) {
+    if (m_busy || m_chatFile.empty()) return;
+    m_busy = true;
+    m_sendBtn->Enable(false);
+    Render(displayQuestion);
+
+    LLMConfig   cfg      = m_llmCfg;
+    std::string chatFile = m_chatFile;
+
+    std::thread([this, prompt, cfg, chatFile, displayQuestion]() {
+        auto res = InvokeLLM(prompt, cfg);
+        wxTheApp->CallAfter([this, res, chatFile, displayQuestion]() {
+            m_busy = false;
+            m_sendBtn->Enable(true);
+
+            std::string answer = res.ok ? res.text : ("Error: " + res.error);
+            while (!answer.empty() && (answer.front() == ' ' || answer.front() == '\n'))
+                answer.erase(answer.begin());
+
+            ConversationTurn turn{displayQuestion, answer};
+            m_turns.push_back(turn);
+            AppendTurn(chatFile, 0, "Conversation", turn);
+            Render();
+        });
+    }).detach();
+}
+
+// ---------------------------------------------------------------------------
 void ChatPanel::OnWebViewNav(wxWebViewEvent& evt) {
     wxString url = evt.GetURL();
 
@@ -262,6 +313,35 @@ void ChatPanel::OnWebViewNav(wxWebViewEvent& evt) {
 
         if (m_onSavedConvo) m_onSavedConvo();
         Render();
+        return;
+    }
+
+    if (url.StartsWith("testtaker://chat-explain/")) {
+        evt.Veto();
+        // URL: testtaker://chat-explain/{slug}/{idx}
+        wxString rest = url.Mid(25);  // after "testtaker://chat-explain/"
+        int slash = rest.Find('/');
+        if (slash < 0) return;
+        std::string slug = rest.Left(slash).ToStdString();
+        long idx = -1;
+        rest.Mid(slash + 1).ToLong(&idx);
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const PersonalityDef* def = FindPersonality(slug);
+        if (!def) return;
+        const auto& t = m_turns[idx];
+        std::string prompt = BuildPersonalityPrompt(*def, t.question, "", t.answer);
+        FireAsNewTurn(def->displayQ, prompt);
+        return;
+    }
+
+    if (url.StartsWith("testtaker://chat-learnmore/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(27).ToLong(&idx);  // "testtaker://chat-learnmore/" is 27 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const auto& t = m_turns[idx];
+        std::string prompt = BuildLearnMorePrompt(t.question, t.answer);
+        FireAsNewTurn("\xf0\x9f\x93\x96 Deep dive: learn more", prompt);
         return;
     }
 

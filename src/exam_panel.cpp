@@ -794,10 +794,73 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
             m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
-        // Toggle overlay via script — avoids a full SetPage() that would reset scroll.
         m_webView->RunScript(
             "var o=document.getElementById('chat-overlay');"
-            "if(o)o.classList.add('active');");
+            "if(o)o.classList.add('active');"
+            "document.querySelectorAll('.turn.active').forEach(function(t){t.classList.remove('active');});"
+            "var t=document.getElementById('turn-" + std::to_string(idx) + "');"
+            "if(t)t.classList.add('active');");
+        return;
+    }
+
+    if (url.StartsWith("testtaker://explain/")) {
+        evt.Veto();
+        // URL: testtaker://explain/{slug}/{idx}
+        wxString rest = url.Mid(20);  // after "testtaker://explain/"
+        int slash = rest.Find('/');
+        if (slash < 0) return;
+        std::string slug = rest.Left(slash).ToStdString();
+        long idx = -1;
+        rest.Mid(slash + 1).ToLong(&idx);
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const QuestionTurn& turn = m_turns[idx];
+        if (turn.explanation.empty()) return;
+        const PersonalityDef* def = FindPersonality(slug);
+        if (!def) return;
+
+        std::string starter = BuildPersonalityPrompt(*def, turn.question, turn.userAnswer, turn.explanation);
+        m_chatPanel->OpenTurn(turn, (int)idx, m_sessionFile, m_llmCfg, starter, def->displayQ);
+        if (!m_splitter->IsSplit()) {
+            int w = m_splitter->GetClientSize().GetWidth();
+            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+        }
+        m_chatOpen = true;
+        m_webView->RunScript(
+            "var o=document.getElementById('chat-overlay');"
+            "if(o)o.classList.add('active');"
+            "document.querySelectorAll('.turn.active').forEach(function(t){t.classList.remove('active');});"
+            "var t=document.getElementById('turn-" + std::to_string(idx) + "');"
+            "if(t)t.classList.add('active');");
+        return;
+    }
+
+    if (url.StartsWith("testtaker://whynot/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(19).ToLong(&idx);  // "testtaker://whynot/" is 19 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const QuestionTurn& turn = m_turns[idx];
+        if (turn.explanation.empty()) return;
+
+        std::string starter = BuildWhyNotPerfectPrompt(
+            turn.question, turn.userAnswer, turn.explanation, turn.score);
+        m_chatPanel->OpenTurn(turn, (int)idx, m_sessionFile, m_llmCfg, starter);
+
+        if (!m_splitter->IsSplit()) {
+            int w = m_splitter->GetClientSize().GetWidth();
+            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+        }
+        m_chatOpen = true;
+        m_webView->RunScript(
+            "var o=document.getElementById('chat-overlay');"
+            "if(o)o.classList.add('active');"
+            "document.querySelectorAll('.turn.active').forEach(function(t){t.classList.remove('active');});"
+            "var t=document.getElementById('turn-" + std::to_string(idx) + "');"
+            "if(t)t.classList.add('active');");
+        m_webView->RunScript(
+            "var b=document.querySelector(\"a[href='testtaker://whynot/" +
+            std::to_string(idx) + "']\");"
+            "if(b)b.classList.add('open');");
         return;
     }
 
@@ -807,7 +870,8 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
         m_webView->RunScript(
             "var o=document.getElementById('chat-overlay');"
-            "if(o)o.classList.remove('active');");
+            "if(o)o.classList.remove('active');"
+            "document.querySelectorAll('.turn.active').forEach(function(t){t.classList.remove('active');});");
         return;
     }
 
@@ -881,6 +945,36 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
         const auto& grp = m_historyGroups[g];
         m_chatPanel->OpenTurn(grp.turns[i], (int)i, grp.sessionFile, m_llmCfg);
+        if (!m_splitter->IsSplit()) {
+            int w = m_splitter->GetClientSize().GetWidth();
+            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+        }
+        m_chatOpen = true;
+        m_webView->RunScript(
+            "var o=document.getElementById('chat-overlay');"
+            "if(o)o.classList.add('active');");
+        return;
+    }
+
+    if (url.StartsWith("testtaker://hexplain/")) {
+        evt.Veto();
+        // URL: testtaker://hexplain/{slug}/{g}/{i}
+        wxString rest = url.Mid(21);  // after "testtaker://hexplain/"
+        int slash = rest.Find('/');
+        if (slash < 0) return;
+        std::string slug = rest.Left(slash).ToStdString();
+        long g = -1, i = -1;
+        if (!parseHistIdx(rest.Mid(slash + 1), g, i)) return;
+        if (g < 0 || g >= (long)m_historyGroups.size()) return;
+        if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
+        const auto& grp = m_historyGroups[g];
+        const QuestionTurn& turn = grp.turns[i];
+        if (turn.explanation.empty()) return;
+        const PersonalityDef* def = FindPersonality(slug);
+        if (!def) return;
+
+        std::string starter = BuildPersonalityPrompt(*def, turn.question, turn.userAnswer, turn.explanation);
+        m_chatPanel->OpenTurn(turn, (int)i, grp.sessionFile, m_llmCfg, starter, def->displayQ);
         if (!m_splitter->IsSplit()) {
             int w = m_splitter->GetClientSize().GetWidth();
             m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
@@ -1136,6 +1230,153 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         return;
     }
 
+    if (url.StartsWith("testtaker://hrocks/")) {
+        evt.Veto();
+        long g = -1, i = -1;
+        auto parseHistIdx2 = [](const wxString& rest, long& g, long& i) -> bool {
+            int slash = rest.Find('/');
+            if (slash < 0) return false;
+            return rest.Left(slash).ToLong(&g) && rest.Mid(slash + 1).ToLong(&i);
+        };
+        if (!parseHistIdx2(url.Mid(19), g, i)) return;
+        if (g < 0 || g >= (long)m_historyGroups.size()) return;
+        if (i < 0 || i >= (long)m_historyGroups[g].turns.size()) return;
+        const QuestionTurn& turn = m_historyGroups[g].turns[i];
+        if (turn.explanation.empty()) return;
+
+        std::string gStr = std::to_string(g), iStr = std::to_string(i);
+        std::string href = "testtaker://hrocks/" + gStr + "/" + iStr;
+        m_webView->RunScript(
+            "var g=document.querySelector(\"a[href='" + href + "']\");"
+            "if(g){g.textContent='⏳ generating…';g.style.pointerEvents='none';}");
+
+        std::string question    = turn.question;
+        std::string explanation = turn.explanation;
+        LLMConfig   llmCfg      = m_llmCfg;
+
+        std::thread([=]() {
+            LLMResult r1, r2;
+            {
+                auto t1 = std::thread([&]() {
+                    r1 = InvokeLLM(BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                });
+                auto t2 = std::thread([&]() {
+                    r2 = InvokeLLM(BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                });
+                t1.join(); t2.join();
+            }
+            wxTheApp->CallAfter([=]() {
+                m_webView->RunScript(
+                    "var g=document.querySelector(\"a[href='" + href + "']\");"
+                    "if(g){g.textContent='💫 rocks';g.style.pointerEvents='';}");
+
+                auto b1 = ParseMultipleGameChoices(r1.text);
+                auto b2 = ParseMultipleGameChoices(r2.text);
+                if (b1.empty() && b2.empty()) { Logger::get().log("hrocks parse failed"); return; }
+
+                auto toGameData = [&](const std::vector<GameQuestionBlock>& bl) {
+                    std::vector<GameData> out;
+                    for (auto& b : bl) {
+                        bool cia = (std::rand() % 2 == 0);
+                        GameData gd;
+                        gd.question   = b.question.empty() ? question : b.question;
+                        gd.choiceA    = cia ? b.correct : b.wrong;
+                        gd.choiceB    = cia ? b.wrong   : b.correct;
+                        gd.correctIsA = cia;
+                        out.push_back(gd);
+                    }
+                    return out;
+                };
+                auto all = toGameData(b1);
+                auto m2  = toGameData(b2);
+                all.insert(all.end(), m2.begin(), m2.end());
+
+                wxString tmpPath = wxFileName::CreateTempFileName("tt-asteroids") + ".dat";
+                if (!WriteGameFiles(tmpPath.ToStdString(), all)) {
+                    Logger::get().log("hrocks: could not write game data file"); return;
+                }
+                wxFileName exeDir(wxStandardPaths::Get().GetExecutablePath());
+                wxString gameBin = exeDir.GetPath() + "/test-taker-asteroids";
+                if (!wxFileExists(gameBin))
+                    gameBin = exeDir.GetPath() + "/../test-taker-asteroids";
+                if (!wxFileExists(gameBin)) {
+                    Logger::get().log("test-taker-asteroids binary not found"); return;
+                }
+                wxExecute("\"" + gameBin + "\" \"" + tmpPath + "\"", wxEXEC_ASYNC);
+                Logger::get().log("hrocks: launched with " + std::to_string(all.size()) + " questions");
+
+                std::string tmpStr   = tmpPath.ToStdString();
+                std::string wantFile = tmpStr + ".want";
+                std::string saveFile = tmpStr + ".save";
+                std::string hintReq  = tmpStr + ".hintreq";
+                std::string hintResp = tmpStr + ".hintresp";
+                std::string pDir     = m_projectDir;
+                auto        onSaved  = m_onSavedConvo;
+                std::thread([=]() {
+                    for (;;) {
+                        if (fs::exists(saveFile)) {
+                            std::string q, a;
+                            { std::ifstream sf(saveFile);
+                              std::string ln;
+                              while (std::getline(sf, ln)) {
+                                  if (ln.rfind("Q: ", 0) == 0) q = ln.substr(3);
+                                  if (ln.rfind("A: ", 0) == 0) a = ln.substr(3);
+                              } }
+                            try { fs::remove(saveFile); } catch (...) {}
+                            if (!q.empty() && !a.empty() && !pDir.empty()) {
+                                char buf[32]; time_t now = time(nullptr);
+                                std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M",
+                                              std::localtime(&now));
+                                AppendSavedConvo(pDir, q, "Correct answer: " + a, buf, true);
+                                if (onSaved) wxTheApp->CallAfter(onSaved);
+                            }
+                        }
+                        if (fs::exists(hintReq)) {
+                            std::string hq, ha, hb;
+                            { std::ifstream hf(hintReq);
+                              std::string ln;
+                              while (std::getline(hf, ln)) {
+                                  if (ln.rfind("Q: ", 0) == 0) hq = ln.substr(3);
+                                  if (ln.rfind("A: ", 0) == 0) ha = ln.substr(3);
+                                  if (ln.rfind("B: ", 0) == 0) hb = ln.substr(3);
+                              } }
+                            try { fs::remove(hintReq); } catch (...) {}
+                            if (!hq.empty()) {
+                                LLMResult hr = InvokeLLM(
+                                    BuildGameHintPrompt(hq, ha, hb), llmCfg);
+                                if (hr.ok && !hr.text.empty()) {
+                                    std::ofstream hrf(hintResp);
+                                    hrf << hr.text;
+                                }
+                            }
+                        }
+                        if (fs::exists(wantFile)) {
+                            try { fs::remove(wantFile); } catch (...) {}
+                            LLMResult r = InvokeLLM(
+                                BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                            if (r.ok) {
+                                auto bl = ParseMultipleGameChoices(r.text);
+                                std::vector<GameData> batch;
+                                for (auto& b : bl) {
+                                    bool cia = (std::rand() % 2 == 0);
+                                    GameData gd;
+                                    gd.question   = b.question.empty() ? question : b.question;
+                                    gd.choiceA    = cia ? b.correct : b.wrong;
+                                    gd.choiceB    = cia ? b.wrong   : b.correct;
+                                    gd.correctIsA = cia;
+                                    batch.push_back(gd);
+                                }
+                                if (!batch.empty()) AppendGameFiles(tmpStr, batch);
+                            }
+                        }
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                    }
+                }).detach();
+            });
+        }).detach();
+        return;
+    }
+
     if (url.StartsWith("testtaker://game/")) {
         evt.Veto();
         long idx = -1;
@@ -1268,6 +1509,145 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
                         if (fs::exists(wantFile)) {
                             try { fs::remove(wantFile); } catch (...) {}
 
+                            LLMResult r = InvokeLLM(
+                                BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                            if (r.ok) {
+                                auto bl = ParseMultipleGameChoices(r.text);
+                                std::vector<GameData> batch;
+                                for (auto& b : bl) {
+                                    bool cia = (std::rand() % 2 == 0);
+                                    GameData gd;
+                                    gd.question   = b.question.empty() ? question : b.question;
+                                    gd.choiceA    = cia ? b.correct : b.wrong;
+                                    gd.choiceB    = cia ? b.wrong   : b.correct;
+                                    gd.correctIsA = cia;
+                                    batch.push_back(gd);
+                                }
+                                if (!batch.empty()) AppendGameFiles(tmpStr, batch);
+                            }
+                        }
+                        std::this_thread::sleep_for(std::chrono::seconds(2));
+                    }
+                }).detach();
+            });
+        }).detach();
+        return;
+    }
+
+    if (url.StartsWith("testtaker://rocks/")) {
+        evt.Veto();
+        long idx = -1;
+        url.Mid(18).ToLong(&idx);  // "testtaker://rocks/" is 18 chars
+        if (idx < 0 || idx >= (long)m_turns.size()) return;
+        const QuestionTurn& turn = m_turns[idx];
+        if (turn.explanation.empty()) return;
+
+        std::string si = std::to_string(idx);
+        m_webView->RunScript(
+            "var g=document.querySelector(\"a[href='testtaker://rocks/" + si + "']\");"
+            "if(g){g.textContent='⏳ generating…';g.style.pointerEvents='none';}");
+
+        std::string question   = turn.question;
+        std::string explanation = turn.explanation;
+        std::string projectDir  = m_projectDir;
+        LLMConfig   llmCfg     = m_llmCfg;
+
+        std::thread([=]() {
+            LLMResult r1, r2;
+            {
+                auto t1 = std::thread([&]() {
+                    r1 = InvokeLLM(BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                });
+                auto t2 = std::thread([&]() {
+                    r2 = InvokeLLM(BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
+                });
+                t1.join(); t2.join();
+            }
+            wxTheApp->CallAfter([=]() {
+                m_webView->RunScript(
+                    "var g=document.querySelector(\"a[href='testtaker://rocks/" + si + "']\");"
+                    "if(g){g.textContent='💫 Asteroids';g.style.pointerEvents='';}");
+
+                auto b1 = ParseMultipleGameChoices(r1.text);
+                auto b2 = ParseMultipleGameChoices(r2.text);
+                if (b1.empty() && b2.empty()) {
+                    Logger::get().log("Asteroids series parse failed"); return;
+                }
+                auto toGameData = [&](const std::vector<GameQuestionBlock>& bl) {
+                    std::vector<GameData> out;
+                    for (auto& b : bl) {
+                        bool cia = (std::rand() % 2 == 0);
+                        GameData gd;
+                        gd.question   = b.question.empty() ? question : b.question;
+                        gd.choiceA    = cia ? b.correct : b.wrong;
+                        gd.choiceB    = cia ? b.wrong   : b.correct;
+                        gd.correctIsA = cia;
+                        out.push_back(gd);
+                    }
+                    return out;
+                };
+                auto all = toGameData(b1);
+                auto m2  = toGameData(b2);
+                all.insert(all.end(), m2.begin(), m2.end());
+
+                wxString tmpPath = wxFileName::CreateTempFileName("tt-asteroids") + ".dat";
+                if (!WriteGameFiles(tmpPath.ToStdString(), all)) {
+                    Logger::get().log("Could not write asteroids data file"); return;
+                }
+                wxFileName exeDir(wxStandardPaths::Get().GetExecutablePath());
+                wxString gameBin = exeDir.GetPath() + "/test-taker-asteroids";
+                if (!wxFileExists(gameBin))
+                    gameBin = exeDir.GetPath() + "/../test-taker-asteroids";
+                if (!wxFileExists(gameBin)) {
+                    Logger::get().log("test-taker-asteroids binary not found"); return;
+                }
+                wxExecute("\"" + gameBin + "\" \"" + tmpPath + "\"", wxEXEC_ASYNC);
+                Logger::get().log("Launched asteroids with " + std::to_string(all.size()) + " questions");
+
+                std::string tmpStr   = tmpPath.ToStdString();
+                std::string wantFile = tmpStr + ".want";
+                std::string saveFile = tmpStr + ".save";
+                std::string hintReq  = tmpStr + ".hintreq";
+                std::string hintResp = tmpStr + ".hintresp";
+                auto        onSaved  = m_onSavedConvo;
+                std::thread([=]() {
+                    for (;;) {
+                        if (fs::exists(saveFile)) {
+                            std::string q, a;
+                            { std::ifstream sf(saveFile); std::string ln;
+                              while (std::getline(sf, ln)) {
+                                  if (ln.rfind("Q: ",0)==0) q = ln.substr(3);
+                                  if (ln.rfind("A: ",0)==0) a = ln.substr(3);
+                              } }
+                            try { fs::remove(saveFile); } catch (...) {}
+                            if (!q.empty() && !a.empty() && !projectDir.empty()) {
+                                char buf[32]; time_t now = time(nullptr);
+                                std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M",
+                                              std::localtime(&now));
+                                AppendSavedConvo(projectDir, q,
+                                                 "Correct answer: " + a, buf, true);
+                                if (onSaved) wxTheApp->CallAfter(onSaved);
+                            }
+                        }
+                        if (fs::exists(hintReq)) {
+                            std::string hq, ha, hb;
+                            { std::ifstream hf(hintReq); std::string ln;
+                              while (std::getline(hf, ln)) {
+                                  if (ln.rfind("Q: ",0)==0) hq = ln.substr(3);
+                                  if (ln.rfind("A: ",0)==0) ha = ln.substr(3);
+                                  if (ln.rfind("B: ",0)==0) hb = ln.substr(3);
+                              } }
+                            try { fs::remove(hintReq); } catch (...) {}
+                            if (!hq.empty()) {
+                                LLMResult hr = InvokeLLM(
+                                    BuildGameHintPrompt(hq, ha, hb), llmCfg);
+                                if (hr.ok && !hr.text.empty()) {
+                                    std::ofstream hrf(hintResp); hrf << hr.text;
+                                }
+                            }
+                        }
+                        if (fs::exists(wantFile)) {
+                            try { fs::remove(wantFile); } catch (...) {}
                             LLMResult r = InvokeLLM(
                                 BuildGameSeriesPrompt(question, explanation, 4), llmCfg);
                             if (r.ok) {

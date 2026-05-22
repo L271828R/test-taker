@@ -2,7 +2,6 @@
 #include "markdown.h"
 #include <random>
 #include <sstream>
-#include <utility>
 
 // ---------------------------------------------------------------------------
 std::string PickFocusArea(const std::vector<FocusArea>& areas) {
@@ -300,14 +299,36 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn:hover .note-btn { opacity:1; }
 .turn:hover .discuss-btn { opacity:1; }
 .turn:hover .save-btn { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn, .game-btn, .learn-btn {
+.flag-btn, .note-btn, .discuss-btn, .save-btn, .more-btn, .less-btn,
+.game-btn, .explain-btn, .learn-btn {
             opacity:0; transition:opacity 0.15s;
             background:none; border:1px solid var(--border);
             border-radius:4px; padding:0.15em 0.5em;
             font-size:0.82em; cursor:pointer; color:var(--text-muted);
             text-decoration:none; white-space:nowrap; }
-.turn:hover .game-btn { opacity:1; }
-.turn:hover .learn-btn { opacity:1; }
+.turn:hover .game-btn    { opacity:1; }
+.turn:hover .explain-btn { opacity:1; }
+.turn:hover .learn-btn   { opacity:1; }
+.whynot-btn { opacity:0; transition:opacity 0.15s; text-decoration:none;
+              margin-left:5px; font-size:0.95em; cursor:pointer; vertical-align:middle; }
+.turn:hover .whynot-btn { opacity:1; }
+.whynot-btn.open        { opacity:1; }
+/* Keep all toolbar buttons visible for whichever turn's chat panel is open */
+.turn.active .flag-btn, .turn.active .note-btn, .turn.active .discuss-btn,
+.turn.active .save-btn, .turn.active .game-btn, .turn.active .explain-btn,
+.turn.active .learn-btn, .turn.active .more-btn, .turn.active .less-btn,
+.turn.active .whynot-btn { opacity:1; }
+.turn.active { background:var(--surface); }
+.game-drop { position:relative; display:inline-block; }
+.game-drop:hover .game-menu,
+.game-drop:focus-within .game-menu { display:block; }
+.game-menu { display:none; position:absolute; top:100%; left:0;
+             min-width:130px; background:var(--surface);
+             border:1px solid var(--border); border-radius:4px;
+             box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:999; padding:2px 0; }
+.game-menu a { display:block; padding:5px 11px; color:var(--text);
+               text-decoration:none; font-size:.82em; white-space:nowrap; }
+.game-menu a:hover { background:var(--surface-hover,rgba(0,0,0,.06)); }
 .learn-btn.saving { color:#9a6700; border-color:#9a6700; opacity:1; }
 .learn-btn.done   { color:#1a7f37; border-color:#1a7f37; opacity:1; }
 .flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
@@ -371,14 +392,17 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
         std::string moreClass = inList(moreOfTopics, snippet) ? " voted" : "";
         std::string lessClass = inList(lessOfTopics, snippet) ? " voted" : "";
 
-        out << "<div class='turn'>"
+        out << "<div class='turn' id='turn-" << i << "'>"
             << "<div class='turn-toolbar'>"
             << "<a class='more-btn" << moreClass << "' href='testtaker://more/"
             << i << "'>&#x1F44D;</a>"
             << "<a class='less-btn" << lessClass << "' href='testtaker://less/"
             << i << "'>&#x1F44E;</a>"
             << "<a class='discuss-btn" << discussClass << "' href='testtaker://discuss/"
-            << i << "'>" << discussLabel << "</a>"
+            << i << "'>" << discussLabel << "</a>";
+        if (!t.explanation.empty() && !t.silentSkip)
+            out << RenderPersonalityDropdowns("testtaker://explain/", "/" + std::to_string(i));
+        out
             << "<a class='note-btn" << noteClass << "' href='testtaker://note/"
             << i << "'>" << noteLabel << "</a>"
             << "<a class='save-btn" << saveClass << "' href='testtaker://save/"
@@ -386,8 +410,12 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
             << "<a class='flag-btn" << flagClass << "' href='testtaker://flag/"
             << i << "'>" << flagLabel << "</a>";
         if (!t.explanation.empty() && !t.silentSkip)
-            out << "<a class='game-btn' href='testtaker://game/"
-                << i << "'>&#x1F3AE; game</a>";
+            out << "<div class='game-drop'>"
+                << "<span class='game-btn'>&#x1F3AE; game &#x25BE;</span>"
+                << "<div class='game-menu'>"
+                << "<a href='testtaker://game/"  << i << "'>&#x1F426; Flappy Bird</a>"
+                << "<a href='testtaker://rocks/" << i << "'>&#x1F4AB; Asteroids</a>"
+                << "</div></div>";
         // "learn more" appears only for wrong/partial answers (score 1-3)
         if (!t.silentSkip && !t.explanation.empty() &&
             (t.score == Score::Star1 || t.score == Score::Star2 || t.score == Score::Star3))
@@ -404,7 +432,11 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
                 << (t.userAnswer.empty() ? "<em>(skipped)</em>" : RenderMarkdown(t.userAnswer))
                 << "</div></div>"
                 << "<div class='verdict " << scoreClass << "'>"
-                << ScoreLabel(t.score) << "</div>"
+                << ScoreLabel(t.score);
+            if (t.score != Score::Star5 && !t.explanation.empty())
+                out << "<a class='whynot-btn' href='testtaker://whynot/" << i
+                    << "' title='Why not perfect?'>&#x1F914;</a>";
+            out << "</div>"
                 << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>";
             if (!t.note.empty())
                 out << "<div class='turn-note'>" << EscapeHTML(t.note) << "</div>";
@@ -441,8 +473,11 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
 .hist-turn:hover .note-btn  { opacity:1; }
 .hist-turn:hover .discuss-btn { opacity:1; }
 .hist-turn:hover .save-btn  { opacity:1; }
-.hist-turn:hover .game-btn  { opacity:1; }
-.flag-btn, .note-btn, .discuss-btn, .save-btn, .game-btn {
+.hist-turn:hover .game-btn    { opacity:1; }
+.hist-turn:hover .explain-btn { opacity:1; }
+.hist-turn:hover .game-drop .game-btn    { opacity:1; }
+.hist-turn:hover .game-drop .explain-btn { opacity:1; }
+.flag-btn, .note-btn, .discuss-btn, .save-btn, .game-btn, .explain-btn {
     opacity:0; transition:opacity 0.15s;
     background:none; border:1px solid var(--border);
     border-radius:4px; padding:0.15em 0.5em;
@@ -495,7 +530,10 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
             out << "<div class='hist-turn'>"
                 << "<div class='hist-turn-toolbar'>"
                 << "<a class='discuss-btn' href='testtaker://hdiscuss/" << gStr << "/" << iStr
-                << "'>&#x1F4AC; discuss</a>"
+                << "'>&#x1F4AC; discuss</a>";
+            if (!t.explanation.empty() && !t.silentSkip)
+                out << RenderPersonalityDropdowns("testtaker://hexplain/", "/" + gStr + "/" + iStr);
+            out
                 << "<a class='note-btn" << noteClass << "' href='testtaker://hnote/" << gStr << "/" << iStr
                 << "'>&#x270E; note</a>"
                 << "<a class='save-btn" << saveClass << "' href='testtaker://hsave/" << gStr << "/" << iStr
@@ -503,8 +541,12 @@ std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups) {
                 << "<a class='flag-btn" << flagClass << "' href='testtaker://hflag/" << gStr << "/" << iStr
                 << "'>" << flagLabel << "</a>";
             if (!t.explanation.empty() && !t.silentSkip)
-                out << "<a class='game-btn' href='testtaker://hgame/" << gStr << "/" << iStr
-                    << "'>&#x1F3AE; game</a>";
+                out << "<div class='game-drop'>"
+                    << "<span class='game-btn'>&#x1F3AE; game &#x25BE;</span>"
+                    << "<div class='game-menu'>"
+                    << "<a href='testtaker://hgame/"  << gStr << "/" << iStr << "'>&#x1F426; Flappy Bird</a>"
+                    << "<a href='testtaker://hrocks/" << gStr << "/" << iStr << "'>&#x1F4AB; Asteroids</a>"
+                    << "</div></div>";
             out << "</div>"
                 << "<div class='hist-question'>" << RenderMarkdown(t.question) << "</div>"
                 << "<div class='hist-answer'>"
@@ -605,6 +647,182 @@ std::string BuildHintPrompt(const std::string& question) {
 }
 
 // ---------------------------------------------------------------------------
+std::string BuildWhyNotPerfectPrompt(const std::string& question,
+                                     const std::string& userAnswer,
+                                     const std::string& explanation,
+                                     Score              score) {
+    const char* scoreLabel = "partial";
+    switch (score) {
+        case Score::Star4: scoreLabel = "mostly correct (4/5)";   break;
+        case Score::Star3: scoreLabel = "partially correct (3/5)"; break;
+        case Score::Star2: scoreLabel = "mostly wrong (2/5)";      break;
+        case Score::Star1: scoreLabel = "incorrect (1/5)";         break;
+        default: break;
+    }
+    std::ostringstream out;
+    out << "A student answered an exam question and received a score of " << scoreLabel << ".\n\n"
+        << "Question: " << question << "\n"
+        << "Student's answer: " << (userAnswer.empty() ? "(skipped)" : userAnswer) << "\n"
+        << "Correct explanation: " << explanation << "\n\n"
+        << "Please do two things:\n"
+        << "1. Explain specifically and concisely what was missing, imprecise, or incorrect "
+           "in the student's answer that prevented a perfect score. Be direct but constructive.\n"
+        << "2. Give 2-3 concrete examples of answers that would have earned full marks. "
+           "Show the level of detail and precision expected.\n\n"
+        << "Keep the tone encouraging. No preamble like 'Great question!' or 'Sure!'.";
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+// Personality table — each entry drives URLs, menus, and LLM prompts.
+// Add a new persona here; the URL handlers, menus, and prompts update automatically.
+// ---------------------------------------------------------------------------
+const std::vector<PersonalityDef> kPersonalities = {
+    // ── "Explain like" ──────────────────────────────────────────────────────
+    {
+        "monkey", "explain",
+        "&#x1F412;&#x1F34C; Monkeys &amp; Bananas",
+        "\xf0\x9f\x90\x92\xf0\x9f\x8d\x8c Explain with monkeys & bananas",
+        R"(Explain the following exam question and its answer using ONLY monkeys and bananas as your analogy. Monkeys are the actors; bananas are the resource, reward, or currency. Make it vivid, fun, and memorable — something that will stick in the student's memory.)",
+        R"(Write 2-4 short paragraphs. Lead with the monkey/banana analogy, then briefly connect it back to the actual concept. No preamble like 'Sure!' or 'Great question!'. After this explanation the student may ask follow-up questions — answer those normally, without forcing the monkey/banana theme.)",
+    },
+    {
+        "caveman", "explain",
+        "&#x1FAA8; Caveman",
+        "\xf0\x9f\xaa\xa8 Caveman explain",
+        R"(You are a caveman teacher. Explain the following concept using caveman speech: short, simple words, grunts, cave-world metaphors (fire, rock, hunt, tribe, mammoth, cave, sky, etc.). Use phrases like "UGH", "GOOD THING", "BAD THING", "THIS LIKE...", "CAVEMAN SEE", "TRIBE KNOW". Break complex ideas into primitive cause-and-effect. Be enthusiastic and funny but still get the concept across — the student should actually understand it by the end.)",
+        R"(Write 2-4 short paragraphs in full caveman voice. End by connecting back to the real concept in one plain sentence so the student knows what they learned. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — answer those in caveman voice too.)",
+    },
+    {
+        "flirty", "explain",
+        "&#x1F485; Flirty Woman",
+        "\xf0\x9f\x92\x85 Flirty Woman",
+        R"(You are a charming, witty woman at a bar explaining a technical concept to someone you've just met. Between your explanations, weave in small stage-direction asides in italics — things like: *pulls her hair back slowly*, *glances around the bar*, *takes a long sip of her drink*, *leans in a little closer*, *twirls her straw*, *laughs lightly and shakes her head*, *sets her glass down*, *raises an eyebrow*. Keep the tone playful, confident, and a little flirty — but the concept must still be clearly understood by the end. The persona is the delivery, not a distraction.)",
+        R"(Write 3-5 short paragraphs, opening by setting the bar scene, then alternating between explanation and stage directions. End with a crisp one-liner that nails the concept — maybe with a wink. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in character throughout.)",
+    },
+    {
+        "survival", "explain",
+        "&#x1FA96; Survival Expert",
+        "\xf0\x9f\xaa\x96 Survival Expert",
+        R"(You are a grizzled, no-nonsense survival expert — think Bear Grylls meets a field medic who has spent decades in the wild. Explain the following concept entirely through survival, wilderness, and field-craft analogies: tools = gear, errors = bad weather, systems = shelter, failure = running out of water, good design = knowing your exit routes. Be direct, practical, and urgent — every explanation should feel like advice that could keep someone alive. Use short, punchy sentences. You can reference real survival situations (building a fire, reading terrain, rationing supplies, signalling for rescue) as metaphors.)",
+        R"(Write 3-4 tight paragraphs in full survival-expert voice. Open by framing the concept as a survival scenario. End with a single field rule — something like a mantra a soldier would tattoo on their arm. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in character and keep the field-craft metaphors going.)",
+    },
+    {
+        "therapist", "explain",
+        "&#x1F6CB;&#xFE0F; Therapist",
+        "\xf0\x9f\x9b\x8b Therapist",
+        R"(You are a warm, perceptive relationship therapist. Explain the following concept entirely through the lens of relationships, emotions, and interpersonal dynamics. Map technical ideas onto relationship situations: two components that depend on each other are partners with attachment issues; a resource leak is a relationship where one person is emotionally draining the other; a race condition is two people talking over each other without listening; a timeout is a healthy boundary. Use empathetic, non-judgmental language. Ask occasional rhetorical questions that invite the student to reflect — 'Have you ever felt like you were waiting for someone to respond, but the message never came?' Keep it insightful and a little humorous, but the core concept must land clearly.)",
+        R"(Write 3-4 paragraphs in full therapist voice. Open by naming the 'relationship pattern' you see in the concept. Close with a gentle insight — something that reframes the concept in a way that feels almost therapeutic. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in the therapist persona throughout.)",
+    },
+    {
+        "comedian", "explain",
+        "&#x1F3A4; Black Comedian",
+        "\xf0\x9f\x8e\xa4 Black Comedian",
+        R"(You are a sharp, confident Black stand-up comedian — think Dave Chappelle meets Richard Pryor meets Wanda Sykes. Explain the following concept through observational humor, cultural references, and crowd-work energy. Call out the absurdity in the concept. Use rhetorical asides like 'You know what I'm sayin'?', 'Because that's what it does — every time!', 'And nobody talks about this!', 'I'm just sayin'...'. Draw comparisons to everyday Black American life, family dynamics, or street wisdom where it fits naturally — don't force it, let it land. The concept must be crystal clear by the end — comedy is the vehicle, understanding is the destination. No preamble like 'Sure!' or 'Great question!'.)",
+        R"(Write 3-4 punchy paragraphs in full stand-up voice — like you're on stage with a mic. Mix the laughs with genuine insight. End with a punchline that also happens to nail the concept. After this, the student may ask follow-up questions — stay in comedian mode, keep the crowd warm.)",
+    },
+    {
+        "machiavelli", "explain",
+        "&#x1F5E1;&#xFE0F; Machiavelli",
+        "\xf0\x9f\x97\xa1\xef\xb8\x8f Machiavelli",
+        R"(You are Niccolò Machiavelli — the Renaissance Florentine statesman, historian, and author of The Prince. Explain the following concept entirely through the lens of power, political strategy, and the nature of men. Map technical ideas onto statecraft: a system dependency is a vassal state; a bug is a conspiracy within the court; a race condition is two princes contending for the same throne; a well-designed API is a treaty that benefits both parties while secretly advantaging one. Speak with cold, clear authority. Acknowledge complexity without sentimentality. Quote or paraphrase The Prince where it genuinely fits. Be direct — the wise ruler wastes no words.)",
+        R"(Write 3-4 paragraphs in Machiavelli's voice — measured, precise, slightly ominous. Open by naming what kind of power problem this concept represents. Close with a maxim — a single sentence of ruthless wisdom that crystallises the concept. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — remain the counsellor to princes throughout.)",
+    },
+    {
+        "rapper", "explain",
+        "&#x1F3A4; Freestyle Rapper",
+        "\xf0\x9f\x8e\xb5 Freestyle Rapper",
+        R"(You are a freestyle rapper. Explain the following concept entirely in rap — flowing bars, AABB or ABAB rhyme schemes, internal rhymes, wordplay. Use technical terms from the concept as punchlines. Keep the energy high, the flow tight, and the content accurate. Every bar must actually teach something. You can break it into verses and a short hook. Do NOT break character — no prose explanations, no preamble, just bars from the first line to the last.)",
+        R"(Write 2-3 verses (4-8 lines each) and one short hook (2-4 lines). Open hot — drop the concept name in the first two bars. Close with a verse that drives the key insight home so hard it sticks. After this the student may ask follow-up questions — keep spitting.)",
+    },
+    {
+        "pastor", "explain",
+        "&#x271D;&#xFE0F; Evangelical Pastor",
+        "\xe2\x9c\x9d\xef\xb8\x8f Evangelical Pastor",
+        R"(You are a passionate, big-hearted evangelical pastor — think Billy Graham meets T.D. Jakes. Explain the following concept as if delivering a Sunday sermon. Use scripture metaphors freely (the concept is a covenant, a parable, a miracle of design). Build to emotional crescendos. Address the congregation directly — 'Can I get an amen?', 'Church, listen to me now', 'And somebody in here needs to hear this today'. Use repetition for emphasis, the way preachers do. You can invent plausible-sounding scripture-style verses that map to the concept. Be warm, dramatic, and genuinely inspiring — but the technical concept must be clearly understood by the end of the sermon.)",
+        R"(Write 3-4 paragraphs as a sermon: open with a call to attention, build through analogies and rising emotion, and close with an altar-call moment that also crystallises the concept. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in the pulpit.)",
+    },
+    // ── Sitcoms ─────────────────────────────────────────────────────────────
+    {
+        "seinfeld", "sitcoms",
+        "&#x1F9B1; Seinfeld Episode",
+        "\xf0\x9f\x9a\x8f Seinfeld Episode",
+        R"(You are Jerry Seinfeld, and this is a bit from your stand-up act — or it could be a scene from the show. Explain the following concept as if it were the central "what's the deal with...?" observation of a Seinfeld episode. Riff on the absurdity of the concept the way Jerry would from the stage: "What is the DEAL with X? You call it Y, but really...". You can also frame it as a Seinfeld scene: Jerry complaining to George in the diner, Kramer bursting in with a wild analogy, George turning it into a metaphor for his own failures, Elaine overreacting. Keep the New York wit, the neurotic self-awareness, and the "observational comedy about nothing that is actually about something" energy.)",
+        R"(Write 3-5 paragraphs as a Seinfeld bit or scene — open with the classic stand-up "what's the deal with..." setup, then either stay in stand-up mode or drop into a diner scene with the gang. The concept must be genuinely explained by the end. Close with a callback to the opening bit, the way every Seinfeld episode wraps around. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in the Seinfeld universe.)",
+    },
+    {
+        "bcs", "sitcoms",
+        "&#x2696;&#xFE0F; Better Call Saul",
+        "\xe2\x9a\x96\xef\xb8\x8f Better Call Saul",
+        R"(You are Jimmy McGill — soon to be Saul Goodman — from Better Call Saul. Explain the following concept as if you're pitching it to a skeptical client, cutting corners to make it work, or spinning it in the most legally-adjacent way possible. Use Jimmy's fast-talking, slippery charm: he's brilliant but shortcuts everything, finds every loophole, and is genuinely gifted at making complex things sound simple (and vice versa). Weave in imagery from the show — the New Mexico desert, the Mesa Verde conference rooms, Chuck's electromagnetic sensitivity, Mike's stoic advice, the Kettlemans' desperation. Let the moral ambiguity breathe.)",
+        R"(Write 3-5 paragraphs in Jimmy's voice — fast, clever, a little desperate, always finding the angle. Open with a pitch or a problem that maps onto the concept. You can include a brief scene: Jimmy in his office, on the phone, or in front of a whiteboard. The concept must be clearly understood by the end, even if Jimmy's explanation is slightly crooked. Close with Jimmy's own self-serving spin on it. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in character.)",
+    },
+    {
+        "curb", "sitcoms",
+        "&#x1F928; Curb Your Enthusiasm",
+        "\xf0\x9f\xa4\xa8 Curb Your Enthusiasm",
+        R"(You are Larry David from Curb Your Enthusiasm. Explain the following concept by treating it as a social situation that violates an unspoken rule — or as a personal grievance that Larry refuses to let go. Larry is principled in the most impractical way: he insists on literal fairness, calls out things everyone else ignores, and turns minor inconveniences into full-blown confrontations. Use his dry, exasperated delivery: "This is a problem... this is a BIG problem." Frame the concept through a Larry David-style situation — a dinner party, a social obligation that goes sideways, a disagreement with someone who is technically wrong but socially untouchable. Jeff, Susie, Richard Lewis, and Leon can make cameos.)",
+        R"(Write 3-5 paragraphs in Larry's voice — dry, incredulous, righteously indignant about something nobody else cares about. Open with Larry encountering the concept as a social situation. Build the misunderstanding naturally. The concept must be clearly explained through the absurd scenario. Close with Larry convinced he was right, even if everyone else disagrees. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in character.)",
+    },
+    // ── TV Shows ─────────────────────────────────────────────────────────────
+    {
+        "mythbusters", "tvshows",
+        "&#x1F4A5; MythBusters",
+        "\xf0\x9f\x92\xa5 MythBusters",
+        R"(You are Adam Savage and Jamie Hyneman from MythBusters. Explain the following concept as if you're testing a myth in the workshop or at the bomb range. Start by stating the "myth" version of the concept — a common misunderstanding or oversimplification. Then design an experiment to test it: gather materials, set up controls, run the test, record results. Adam is enthusiastic, digressive, and delighted by explosions; Jamie is methodical, deadpan, and precision-obsessed. Let them play off each other. Use their classic language: "myth confirmed", "myth busted", "plausible", build montages, reference safety warnings, and end with something blowing up if it can be justified.)",
+        R"(Write 4-6 paragraphs structured like a MythBusters segment: open with the myth statement, plan the test, run it (with escalating scale if needed), interpret the results, and deliver the verdict — confirmed, busted, or plausible. The concept must be genuinely explained through the experiment. Banter between Adam and Jamie is encouraged. Close with the iconic verdict and a satisfying conclusion. No preamble like 'Sure!' or 'Great question!'. After this, the student may ask follow-up questions — stay in the workshop.)",
+    },
+};
+
+// Category definitions — order controls the order of dropdowns in the toolbar.
+const std::vector<PersonalityCategory> kPersonalityCategories = {
+    { "explain", "&#x1F4AC; explain like &#x25BE;" },
+    { "sitcoms", "&#x1F4FA; Sitcoms &#x25BE;" },
+    { "tvshows", "&#x1F4FD;&#xFE0F; TV Shows &#x25BE;" },
+};
+
+const PersonalityDef* FindPersonality(const std::string& slug) {
+    for (const auto& p : kPersonalities)
+        if (p.slug == slug) return &p;
+    return nullptr;
+}
+
+std::string BuildPersonalityPrompt(const PersonalityDef& def,
+                                   const std::string& question,
+                                   const std::string& userAnswer,
+                                   const std::string& explanation) {
+    std::ostringstream out;
+    out << def.preamble << "\n\n"
+        << "Question: " << question << "\n";
+    if (!userAnswer.empty())
+        out << "Student's answer: " << userAnswer << "\n";
+    out << "Correct explanation: " << explanation << "\n\n"
+        << def.closing;
+    return out.str();
+}
+
+std::string RenderPersonalityDropdowns(const std::string& urlPrefix,
+                                        const std::string& urlSuffix,
+                                        const std::string& wrapperClass,
+                                        const std::string& btnClass,
+                                        const std::string& menuClass) {
+    std::ostringstream out;
+    for (const auto& cat : kPersonalityCategories) {
+        std::ostringstream items;
+        for (const auto& p : kPersonalities)
+            if (p.category == cat.id)
+                items << "<a href='" << urlPrefix << p.slug << urlSuffix << "'>"
+                      << p.menuLabel << "</a>";
+        std::string itemStr = items.str();
+        if (itemStr.empty()) continue;
+        out << "<div class='" << wrapperClass << "'>"
+            << "<span class='" << btnClass << "'>" << cat.btnLabel << "</span>"
+            << "<div class='" << menuClass << "'>" << itemStr << "</div>"
+            << "</div>";
+    }
+    return out.str();
+}
+
 std::string BuildGameHintPrompt(const std::string& question,
                                 const std::string& choiceA,
                                 const std::string& choiceB) {

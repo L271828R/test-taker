@@ -220,3 +220,8 @@ add_executable(test-taker-game game/main.cpp src/game_data.cpp)
 target_include_directories(test-taker-game PRIVATE src /opt/homebrew/include)
 target_link_libraries(test-taker-game PRIVATE SDL2::SDL2 SDL2_ttf::SDL2_ttf)
 set_target_properties(test-taker-game PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_executable(test-taker-asteroids game/asteroids.cpp src/game_data.cpp)
+target_include_directories(test-taker-asteroids PRIVATE src /opt/homebrew/include)
+target_link_libraries(test-taker-asteroids PRIVATE SDL2::SDL2 SDL2_ttf::SDL2_ttf)
+set_target_properties(test-taker-asteroids PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

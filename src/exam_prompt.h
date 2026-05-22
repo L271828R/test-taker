@@ -96,6 +96,48 @@ std::string BuildGameHintPrompt(const std::string& question,
                                 const std::string& choiceA,
                                 const std::string& choiceB);
 
+// Build the opening message for the 🤔 "why not perfect?" chat.
+// Explains what was missing from the answer and gives examples of perfect answers.
+std::string BuildWhyNotPerfectPrompt(const std::string& question,
+                                     const std::string& userAnswer,
+                                     const std::string& explanation,
+                                     Score              score);
+
+// Data-driven personality system.
+// Each entry drives URL handlers, dropdown menus, chat-bubble labels, and prompts.
+struct PersonalityDef {
+    std::string slug;       // URL path segment: "monkey", "caveman", etc.
+    std::string category;   // matches PersonalityCategory::id
+    std::string menuLabel;  // HTML for the dropdown item (may contain entity refs)
+    std::string displayQ;   // UTF-8 label shown in the chat bubble
+    std::string preamble;   // prompt text before the Q / answer / explanation block
+    std::string closing;    // prompt text after the explanation block
+};
+
+// An ordered group of personalities that shares one dropdown button.
+struct PersonalityCategory {
+    std::string id;
+    std::string btnLabel;   // HTML inside the dropdown button span
+};
+
+extern const std::vector<PersonalityDef>      kPersonalities;
+extern const std::vector<PersonalityCategory> kPersonalityCategories;
+const PersonalityDef* FindPersonality(const std::string& slug);
+
+// Builds the full LLM prompt for any personality.
+std::string BuildPersonalityPrompt(const PersonalityDef& def,
+                                   const std::string& question,
+                                   const std::string& userAnswer,
+                                   const std::string& explanation);
+
+// Renders all category dropdowns back-to-back.
+// wrapperClass/btnClass/menuClass: CSS classes for the outer div, button span, menu div.
+std::string RenderPersonalityDropdowns(const std::string& urlPrefix,
+                                        const std::string& urlSuffix,
+                                        const std::string& wrapperClass = "game-drop",
+                                        const std::string& btnClass     = "explain-btn",
+                                        const std::string& menuClass    = "game-menu");
+
 // Render past-session groups as interactive history above the active session.
 // Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
 // Includes a clear-history link.

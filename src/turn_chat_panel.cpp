@@ -71,7 +71,9 @@ TurnChatPanel::TurnChatPanel(wxWindow* parent, bool darkMode,
 void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
                               int                 turnIndex,
                               const std::string&  sessionFile,
-                              const LLMConfig&    llmCfg) {
+                              const LLMConfig&    llmCfg,
+                              const std::string&  starterMessage,
+                              const std::string&  starterDisplayQ) {
     m_examTurn     = turn;
     m_turnIndex    = turnIndex;
     m_sessionFile  = sessionFile;
@@ -83,12 +85,54 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
     m_sendBtn->Enable();
     m_inputCtrl->Clear();
 
-    // Compact header: "Q1 — Partial" — the question is visible on the left
     std::string label = "Q" + std::to_string(turnIndex + 1)
                       + " \xe2\x80\x94 " + ScoreLabel(turn.score);
     m_titleLabel->SetLabel(wxString::FromUTF8(label));
 
-    Render();
+    // Check whether this starter has already been asked in a previous session.
+    auto starterAlreadyFired = [&](const std::string& displayQ) {
+        for (const auto& t : m_turns)
+            if (t.question == displayQ) return true;
+        return false;
+    };
+
+    Logger::get().log("OpenTurn  idx=" + std::to_string(turnIndex)
+                      + "  existingChatTurns=" + std::to_string(m_turns.size())
+                      + "  hasStarter=" + std::to_string(!starterMessage.empty()));
+    std::string displayQ = starterMessage.empty() ? ""
+        : (starterDisplayQ.empty()
+            ? "\xf0\x9f\x90\x92\xf0\x9f\x8d\x8c Explain with monkeys & bananas"
+            : starterDisplayQ);
+
+    if (!starterMessage.empty() && !starterAlreadyFired(displayQ)) {
+        // Auto-fire the starter prompt — same flow as OnSend but with a synthetic question.
+        m_busy = true;
+        m_sendBtn->Enable(false);
+        Logger::get().log("OpenTurn firing starter: " + displayQ);
+        Render(displayQ);
+
+        QuestionTurn      examTurn    = m_examTurn;
+        std::string       sf         = m_sessionFile;
+        int               ti         = m_turnIndex;
+        LLMConfig         cfg        = m_llmCfg;
+
+        std::thread([this, starterMessage, examTurn, sf, ti, cfg, displayQ]() {
+            LLMResult res = InvokeLLM(starterMessage, cfg);
+            wxTheApp->CallAfter([this, res, sf, ti, displayQ]() {
+                m_busy = false;
+                m_sendBtn->Enable(true);
+                std::string answer = res.ok ? res.text : ("Error: " + res.error);
+                TurnChatTurn t{displayQ, answer};
+                m_turns.push_back(t);
+                AppendTurnChatTurn(sf, ti, t);
+                Render();
+            });
+        }).detach();
+    } else {
+        if (!starterMessage.empty())
+            Logger::get().log("OpenTurn SKIP starter (already in history): " + displayQ);
+        Render();
+    }
 }
 
 // ---------------------------------------------------------------------------
