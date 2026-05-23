@@ -4,6 +4,24 @@
 #include <sstream>
 
 // ---------------------------------------------------------------------------
+static std::vector<std::string> splitPipe(const std::string& s) {
+    std::vector<std::string> v;
+    std::istringstream ss(s);
+    std::string tok;
+    while (std::getline(ss, tok, '|'))
+        if (!tok.empty()) v.push_back(tok);
+    return v;
+}
+
+void ApplyProjectExamConfig(const ProjectConfig& pcfg, ExamConfig& cfg) {
+    cfg.personalities = splitPipe(pcfg.personalities);
+    cfg.moreOfTopics  = splitPipe(pcfg.examMoreOf);
+    cfg.lessOfTopics  = splitPipe(pcfg.examLessOf);
+    if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
+        cfg.tidbitCount = pcfg.examTidbitCount;
+}
+
+// ---------------------------------------------------------------------------
 std::string PickFocusArea(const std::vector<FocusArea>& areas) {
     if (areas.empty()) return "";
     if (areas.size() == 1) return areas[0].text;

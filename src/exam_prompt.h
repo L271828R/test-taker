@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include "project.h"
 #include "session.h"
 
 struct FocusArea {
@@ -27,6 +28,10 @@ struct ExamConfig {
     std::vector<std::string> moreOfTopics;   // topics user wants more questions about
     std::vector<std::string> lessOfTopics;   // topics user wants fewer questions about
 };
+
+// Apply per-project exam settings (personalities, topic weights, tidbit count) to cfg.
+// Called by both StartSession and ResumeSession so neither can miss a field.
+void ApplyProjectExamConfig(const ProjectConfig& pcfg, ExamConfig& cfg);
 
 // Build the first prompt: asks LLM to generate question #1.
 std::string BuildFirstQuestionPrompt(const ExamConfig& cfg);

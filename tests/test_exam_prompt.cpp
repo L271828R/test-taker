@@ -1,4 +1,5 @@
 #include "exam_prompt.h"
+#include "project.h"
 #include "session.h"
 #include <iostream>
 
@@ -949,6 +950,35 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [game-series-prompt-context]\n";
+        }
+    }
+
+    // ApplyProjectExamConfig must copy examTidbitCount into cfg.tidbitCount so that
+    // a resumed session honours the project setting rather than defaulting to 1.
+    {
+        ProjectConfig pcfg;
+        pcfg.personalities    = "Einstein|Darwin|Curie|Feynman|Sagan|Torvalds|Lovelace|Christie";
+        pcfg.examTidbitCount  = 8;
+        pcfg.examMoreOf       = "pointers";
+        pcfg.examLessOf       = "templates";
+
+        ExamConfig c;
+        c.tidbitCount = 1; // default — simulates what ResumeSession would see before the fix
+        ApplyProjectExamConfig(pcfg, c);
+
+        bool countOk = (c.tidbitCount == 8);
+        bool persOk  = (c.personalities.size() == 8);
+        bool moreOk  = (c.moreOfTopics == std::vector<std::string>{"pointers"});
+        bool lessOk  = (c.lessOfTopics == std::vector<std::string>{"templates"});
+        if (!countOk || !persOk || !moreOk || !lessOk) {
+            std::cerr << "FAIL [apply-project-exam-config]:"
+                      << " count=" << c.tidbitCount
+                      << " pers=" << c.personalities.size()
+                      << " more=" << (!c.moreOfTopics.empty() ? c.moreOfTopics[0] : "")
+                      << " less=" << (!c.lessOfTopics.empty() ? c.lessOfTopics[0] : "") << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [apply-project-exam-config]\n";
         }
     }
 

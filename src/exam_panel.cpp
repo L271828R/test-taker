@@ -183,21 +183,7 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_cfg             = cfg;
     m_llmCfg          = llmCfg;
     SetDarkMode(darkMode);
-    {
-        ProjectConfig pcfg = LoadConfig(projectDir);
-        auto splitPipe = [](const std::string& s) {
-            std::vector<std::string> v;
-            std::istringstream ss(s);
-            std::string tok;
-            while (std::getline(ss, tok, '|'))
-                if (!tok.empty()) v.push_back(tok);
-            return v;
-        };
-        m_cfg.moreOfTopics = splitPipe(pcfg.examMoreOf);
-        m_cfg.lessOfTopics = splitPipe(pcfg.examLessOf);
-        if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
-            m_cfg.tidbitCount = pcfg.examTidbitCount;
-    }
+    ApplyProjectExamConfig(LoadConfig(projectDir), m_cfg);
     m_active          = true;
     m_busy            = false;
     m_questionIndex   = 0;
@@ -256,20 +242,7 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     m_cfg.difficulty     = hdr.difficulty;
     m_cfg.totalQuestions = hdr.totalQuestions;
     m_cfg.projectContext.clear();
-    {
-        ProjectConfig pcfg = LoadConfig(projectDir);
-        auto splitPipe = [](const std::string& s) {
-            std::vector<std::string> v;
-            std::istringstream ss(s);
-            std::string tok;
-            while (std::getline(ss, tok, '|'))
-                if (!tok.empty()) v.push_back(tok);
-            return v;
-        };
-        m_cfg.personalities = splitPipe(pcfg.personalities);
-        m_cfg.moreOfTopics  = splitPipe(pcfg.examMoreOf);
-        m_cfg.lessOfTopics  = splitPipe(pcfg.examLessOf);
-    }
+    ApplyProjectExamConfig(LoadConfig(projectDir), m_cfg);
 
     bool complete = (int)turns.size() >= hdr.totalQuestions;
     m_active = !complete;
