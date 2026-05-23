@@ -40,6 +40,7 @@ private:
     void LoadHistory();
     void Render(const std::string& pendingQuestion = "");
     std::string BuildChatHTML(const std::string& pendingQ = "") const;
+
     void FireAsNewTurn(const std::string& displayQuestion, const std::string& prompt);
 
     void OnSend(wxCommandEvent&);

@@ -82,7 +82,7 @@ std::vector<TurnChatTurn> LoadTurnChat(const std::string& filePath, int turnInde
 bool AppendTurnChatTurn(const std::string& filePath, int turnIndex,
                         const TurnChatTurn& turn) {
     std::string content = readFile(filePath);
-    if (content.empty()) return false;
+    // Don't bail on empty — file may not exist yet (e.g. saved_discuss.md)
 
     std::string marker  = ":::chat[" + std::to_string(turnIndex) + "]";
     std::string newEntry = "Q: " + turn.question + "\nA: " + turn.answer + "\n\n";

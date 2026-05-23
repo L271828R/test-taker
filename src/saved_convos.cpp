@@ -1,4 +1,5 @@
 #include "saved_convos.h"
+#include "exam_prompt.h"
 #include "markdown.h"
 #include <fstream>
 #include <sstream>
@@ -113,9 +114,42 @@ std::string BuildSavedConvosHTML(const std::vector<SavedConvo>& convos) {
     out << R"(<style>
 .saved-entry { position:relative; border-bottom:1px solid var(--border);
                margin-bottom:1.4em; padding-bottom:1em; }
-.saved-date { font-size:0.8em; color:var(--text-muted); margin-bottom:0.5em; }
-.saved-q { font-weight:600; margin-bottom:0.4em; }
-.saved-e { font-size:0.95em; }
+.saved-date { font-size:0.8em; color:var(--text-muted); margin-bottom:0.3em; }
+.saved-toolbar { display:flex; gap:0.4em; margin-bottom:0.5em; }
+.saved-entry:hover .sv-btn,
+.saved-entry:hover .sv-explain-drop { opacity:1; }
+.sv-btn { opacity:0; transition:opacity 0.15s;
+          background:none; border:1px solid var(--border); border-radius:4px;
+          padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
+          color:var(--text-muted); text-decoration:none; white-space:nowrap; }
+.sv-btn:hover { border-color:#9a6700; color:#9a6700; }
+.sv-explain-drop { position:relative; display:inline-block;
+                   opacity:0; transition:opacity 0.15s; }
+.sv-explain-btn { background:none; border:1px solid var(--border); border-radius:4px;
+                  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
+                  color:var(--text-muted); white-space:nowrap; }
+.sv-explain-drop:hover .sv-explain-menu,
+.sv-explain-drop:focus-within .sv-explain-menu { display:block; }
+.sv-explain-menu { display:none; position:absolute; top:100%; left:0;
+                   min-width:160px; background:var(--surface);
+                   border:1px solid var(--border); border-radius:4px;
+                   box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:999; padding:2px 0; }
+.sv-explain-menu a { display:block; padding:5px 11px; color:var(--text);
+                     text-decoration:none; font-size:.82em; white-space:nowrap; }
+.sv-explain-menu a:hover { background:var(--surface-hover,rgba(0,0,0,.06)); }
+.sv-explain-menu .sub-wrap { position:relative; }
+.sv-explain-menu .sub-label { display:block; padding:5px 11px; font-size:.82em;
+                               color:var(--text); white-space:nowrap; cursor:default; }
+.sv-explain-menu .sub-label::after { content:' \25BA'; font-size:0.75em; }
+.sv-explain-menu .sub-wrap:hover .sub-menu,
+.sv-explain-menu .sub-wrap:focus-within .sub-menu { display:block; }
+.sv-explain-menu .sub-menu { display:none; position:absolute; left:100%; top:-2px;
+                              min-width:180px; background:var(--surface);
+                              border:1px solid var(--border); border-radius:4px;
+                              box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:1000; padding:2px 0; }
+.saved-entry.active { background:var(--surface); }
+.saved-entry.active .sv-btn,
+.saved-entry.active .sv-explain-drop { opacity:1; }
 .saved-entry:hover .del-btn { opacity:1; }
 .del-btn { position:absolute; top:0; right:0;
            opacity:0; transition:opacity 0.15s;
@@ -123,6 +157,8 @@ std::string BuildSavedConvosHTML(const std::vector<SavedConvo>& convos) {
            padding:0.1em 0.45em; font-size:0.85em; cursor:pointer;
            color:var(--text-muted); text-decoration:none; line-height:1.4; }
 .del-btn:hover { color:#cf222e; border-color:#cf222e; }
+.saved-q { font-weight:600; margin-bottom:0.4em; }
+.saved-e { font-size:0.95em; }
 .game-badge { font-size:0.8em; margin-left:0.4em;
               vertical-align:middle; opacity:0.8; }
 </style>
@@ -132,11 +168,22 @@ std::string BuildSavedConvosHTML(const std::vector<SavedConvo>& convos) {
     for (int di = 0; di < n; ++di) {
         int fileIdx = n - 1 - di;           // newest displayed first
         const auto& c = convos[fileIdx];
-        out << "<div class='saved-entry'>"
+        std::string si = std::to_string(fileIdx);
+        out << "<div class='saved-entry' id='saved-entry-" << si << "'>"
             << "<a class='del-btn' href='testtaker://delete-saved/"
             << fileIdx << "' title='Remove'>&#x2715;</a>"
             << "<div class='saved-date'>" << EscapeHTML(c.date)
             << (c.fromGame ? "<span class='game-badge'>\xF0\x9F\x8E\xAE</span>" : "")
+            << "</div>"
+            << "<div class='saved-toolbar'>"
+            << "<a class='sv-btn' href='testtaker://saved-discuss/" << si
+            << "'>&#x1F4AC; discuss</a>"
+            << RenderPersonalityDropdowns("testtaker://saved-explain/", "/" + si,
+                                          "sv-explain-drop", "sv-explain-btn", "sv-explain-menu")
+            << "<a class='sv-btn' href='testtaker://saved-learnmore/" << si
+            << "' title='Deep dive: learn more'>&#x1F4D6; learn&nbsp;more</a>"
+            << "<a class='sv-btn' href='testtaker://saved-game/" << si
+            << "' title='Play a quiz game on this topic'>&#x1F3AE; game</a>"
             << "</div>"
             << "<div class='saved-q'>" << RenderMarkdown(c.question) << "</div>"
             << "<div class='saved-e'>" << RenderMarkdown(c.explanation) << "</div>"

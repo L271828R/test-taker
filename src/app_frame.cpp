@@ -125,7 +125,7 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
         m_reviewPage->RefreshSessions("");
         m_chatPage->SyncProject("", {}, m_darkMode);
         m_corpusPage->SyncProject("", "");
-        m_savedPage->SyncProject("", m_darkMode);
+        m_savedPage->SyncProject("", {}, m_darkMode);
         m_examPage->Clear();
         SetStatusText("No project open.");
         return;
@@ -147,7 +147,7 @@ void AppFrame::OnProjectActivated(const std::string& projectDir) {
         llmCfg.ollamaModel = pcfg.examOllamaModel;
     m_chatPage->SyncProject(projectDir, llmCfg, m_darkMode);
     m_corpusPage->SyncProject(projectDir, llmCfg.ollamaUrl);
-    m_savedPage->SyncProject(projectDir, m_darkMode);
+    m_savedPage->SyncProject(projectDir, llmCfg, m_darkMode);
 
     // Always reset the exam panel when switching projects. Any in-progress turns
     // are already persisted via AppendSessionTurn, so no data is lost.
