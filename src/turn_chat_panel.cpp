@@ -1,6 +1,5 @@
 #include "turn_chat_panel.h"
-#include "markdown.h"
-#include "html_template.h"
+#include "turn_chat.h"
 #include "logger.h"
 #include "saved_convos.h"
 #include <ctime>
@@ -171,85 +170,8 @@ void TurnChatPanel::OnClose(wxCommandEvent&) {
 
 // ---------------------------------------------------------------------------
 std::string TurnChatPanel::BuildChatHTML(const std::string& pendingQ) const {
-    std::string scoreColour;
-    switch (m_examTurn.score) {
-        case Score::Star5:   scoreColour = "#1a7f37"; break;
-        case Score::Star4:   scoreColour = "#2da44e"; break;
-        case Score::Star3:   scoreColour = "#9a6700"; break;
-        case Score::Star2:   scoreColour = "#e36b0a"; break;
-        case Score::Star1:   scoreColour = "#cf222e"; break;
-        default:             scoreColour = "#57606a"; break;
-    }
-
-    std::ostringstream body;
-
-    // Extra CSS for the chat bubbles, layered on top of BuildHTML's theme tokens.
-    body << R"(<style>
-body { padding: 12px; }
-.ctx { border-radius:6px; padding:8px 10px; margin-bottom:14px;
-       border-left:3px solid )" << scoreColour << R"(;
-       background:var(--surface); font-size:.88em; }
-.ctx-score { display:inline-block; padding:.1em .45em; border-radius:4px;
-             color:#fff; font-size:.85em; font-weight:600; margin-right:6px;
-             vertical-align:middle; background:)" << scoreColour << R"(; }
-.ctx-expl { color:var(--text-muted); vertical-align:middle; }
-.turn { margin-bottom:16px; }
-.turn-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; }
-.turn:hover .tc-save-btn { opacity:1; }
-.tc-save-btn { opacity:0; transition:opacity 0.15s;
-  background:none; border:1px solid var(--border); border-radius:4px;
-  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
-  color:var(--text-muted); text-decoration:none; white-space:nowrap; }
-.tc-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
-.q { background:var(--surface); border:1px solid var(--border);
-     border-radius:8px 8px 8px 2px; padding:8px 12px;
-     margin-bottom:6px; font-weight:500; }
-.a { border-radius:2px 8px 8px 8px; padding:8px 12px; }
-.a p:last-child { margin-bottom:0; }
-.a pre { font-size:85%; }
-.thinking { color:var(--text-muted); font-style:italic; padding:8px 12px; }
-.empty { color:var(--text-muted); font-style:italic; }
-</style>
-)";
-
-    if (m_turnIndex < 0) {
-        body << "<p class='empty'>Click <strong>&#x1F4AC; discuss</strong> on any "
-                "completed question to start a follow-up conversation.</p>";
-    } else {
-        // Compact explanation strip — question is visible on the left
-        body << "<div class='ctx'>"
-             << "<span class='ctx-score'>" << ScoreLabel(m_examTurn.score) << "</span>"
-             << "<span class='ctx-expl'>" << EscapeHTML(m_examTurn.explanation) << "</span>"
-             << "</div>";
-
-        for (int i = 0; i < (int)m_turns.size(); ++i) {
-            const auto& t = m_turns[i];
-            bool isSaved = m_savedIndices.count(i) > 0;
-            std::string saveClass = isSaved ? " saved" : "";
-            std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
-            body << "<div class='turn'>"
-                 << "<div class='turn-toolbar'>"
-                 << "<a class='tc-save-btn" << saveClass << "' href='testtaker://tc-save/"
-                 << i << "'>" << saveLabel << "</a>"
-                 << "</div>"
-                 << "<div class='q'>" << RenderMarkdown(t.question) << "</div>"
-                 << "<div class='a'>" << RenderMarkdown(t.answer) << "</div>"
-                 << "</div>\n";
-        }
-        if (!pendingQ.empty()) {
-            body << "<div class='turn'>"
-                 << "<div class='q'>" << RenderMarkdown(pendingQ) << "</div>"
-                 << "<div class='thinking'>&#x22EF;</div>"
-                 << "</div>\n";
-        }
-        if (m_turns.empty() && pendingQ.empty()) {
-            body << "<p class='empty'>Ask a follow-up question about this result.</p>";
-        }
-    }
-
-    body << "<script>window.scrollTo(0,document.body.scrollHeight);</script>";
-
-    return BuildHTML(body.str(), "Discussion", m_darkMode);
+    return BuildTurnChatHTML(m_examTurn, m_turnIndex, m_turns,
+                             m_darkMode, m_savedIndices, pendingQ);
 }
 
 // ---------------------------------------------------------------------------

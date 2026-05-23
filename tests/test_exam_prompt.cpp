@@ -952,5 +952,22 @@ int test_exam_prompt() {
         }
     }
 
+    // Mermaid hint must include quoted-label guidance so the LLM doesn't emit
+    // unquoted node labels with { } or // that break the Mermaid parser.
+    {
+        ExamConfig cfgLarge = cfg;
+        cfgLarge.largeModel = true;
+        std::string p = BuildScoringAndNextPrompt(cfgLarge, {}, "What is enum class?", "scoped enums", 2);
+
+        bool hasQuoteGuidance = p.find("quot") != std::string::npos
+                             || p.find("\"") != std::string::npos;
+        if (!hasQuoteGuidance) {
+            std::cerr << "FAIL [mermaid-hint-quoted-labels]: mermaid hint lacks quoted-label guidance\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [mermaid-hint-quoted-labels]\n";
+        }
+    }
+
     return failures;
 }

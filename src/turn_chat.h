@@ -1,4 +1,5 @@
 #pragma once
+#include <set>
 #include <string>
 #include <vector>
 #include "session.h"
@@ -30,3 +31,13 @@ std::string BuildTurnChatPrompt(const QuestionTurn& examTurn,
                                 const std::vector<TurnChatTurn>& history,
                                 const std::string& question,
                                 const std::string& corpusContext = "");
+
+// Build the full HTML page for the discussion panel.
+// savedIndices marks which chat turns already have a saved-convo entry.
+// pendingQ is shown as a "thinking" bubble when an LLM call is in flight.
+std::string BuildTurnChatHTML(const QuestionTurn& examTurn,
+                               int turnIndex,
+                               const std::vector<TurnChatTurn>& turns,
+                               bool darkMode,
+                               const std::set<int>& savedIndices = {},
+                               const std::string& pendingQ = "");

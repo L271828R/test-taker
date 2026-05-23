@@ -216,5 +216,54 @@ int test_turn_chat() {
         }
     }
 
+    // ParseTurnChat must preserve blank lines within an answer so that
+    // multi-paragraph LLM responses survive the serialize → parse round-trip.
+    {
+        TurnChatTurn t{"How does RAII work?",
+                       "First paragraph about RAII.\n\nSecond paragraph with more detail."};
+
+        std::string body = SerializeTurnChatBody({t});
+        auto reparsed = ParseTurnChat(body);
+
+        bool ok = reparsed.size() == 1
+               && reparsed[0].answer.find("\n\n") != std::string::npos;
+        if (!ok) {
+            std::cerr << "FAIL [turn-chat-multiline-answer]: paragraph break lost in round-trip; "
+                      << "answer='" << (reparsed.empty() ? "(empty)" : reparsed[0].answer) << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-multiline-answer]\n";
+        }
+    }
+
+    // BuildTurnChatHTML must NOT include the ctx context strip (score + explanation).
+    // The left-hand exam panel already shows the question context; duplicating it
+    // in the side panel serves no purpose and clutters the view.
+    {
+        QuestionTurn turn;
+        turn.question    = "What is RAII?";
+        turn.userAnswer  = "Resource management.";
+        turn.score       = Score::Star3;
+        turn.explanation = "Partially correct — missed scope binding.";
+
+        std::string html = BuildTurnChatHTML(turn, 0, {}, false);
+
+        bool hasCtx = html.find("class='ctx'") != std::string::npos;
+        if (hasCtx) {
+            std::cerr << "FAIL [turn-chat-no-ctx-strip]: ctx div found in HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-no-ctx-strip]\n";
+        }
+
+        bool hasExplanation = html.find("missed scope binding") != std::string::npos;
+        if (hasExplanation) {
+            std::cerr << "FAIL [turn-chat-no-ctx-explanation]: explanation text leaked into HTML\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-no-ctx-explanation]\n";
+        }
+    }
+
     return failures;
 }

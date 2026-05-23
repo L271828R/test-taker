@@ -130,6 +130,9 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
     const std::string mermaidHint = cfg.largeModel
         ? " If a diagram would clarify the concept, add a ```mermaid``` code block"
           " after the explanation text."
+          " Mermaid syntax rules: always wrap node labels in double quotes if they"
+          " contain any of { } ( ) < > ; : / — e.g. A[\"enum Color { RED }\"] not"
+          " A[enum Color { RED }]. Keep labels short. Use only graph TD or LR."
         : "";
 
     // Pick one personality at random and bake it into the instruction.
