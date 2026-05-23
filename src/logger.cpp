@@ -10,10 +10,18 @@ Logger& Logger::get() {
     return instance;
 }
 
-Logger::Logger() {
+Logger::Logger() : m_pid(getpid()) {
     std::string dir = std::string(getenv("HOME") ?: "") + "/Library/Logs/TestTaker";
     ::system(("mkdir -p \"" + dir + "\"").c_str());
-    m_file.open(dir + "/test-taker-" + std::to_string(getpid()) + ".log", std::ios::app);
+    m_file.open(dir + "/test-taker.log", std::ios::app);
+    // Mark each run so sessions are distinguishable in the shared appended file.
+    auto now = std::chrono::system_clock::now();
+    auto t   = std::chrono::system_clock::to_time_t(now);
+    std::ostringstream hdr;
+    hdr << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S")
+        << " [" << m_pid << "]  === SESSION START ===\n";
+    m_file << hdr.str();
+    m_file.flush();
 }
 
 void Logger::log(const std::string& msg) {
@@ -22,7 +30,7 @@ void Logger::log(const std::string& msg) {
     auto t   = std::chrono::system_clock::to_time_t(now);
     std::ostringstream line;
     line << std::put_time(std::localtime(&t), "%Y-%m-%d %H:%M:%S")
-         << "  " << msg << "\n";
+         << " [" << m_pid << "]  " << msg << "\n";
     m_file << line.str();
     m_file.flush();
 }

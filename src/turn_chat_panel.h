@@ -50,15 +50,13 @@ private:
     std::vector<TurnChatTurn> m_turns;
 
     wxWebView*    m_webView    = nullptr;
-    wxTextCtrl*   m_inputCtrl  = nullptr;
-    wxButton*     m_sendBtn    = nullptr;
     wxButton*     m_closeBtn   = nullptr;
     wxStaticText* m_titleLabel = nullptr;
 
     void Render(const std::string& pendingQuestion = "");
     std::string BuildChatHTML(const std::string& pendingQuestion) const;
 
-    void OnSend(wxCommandEvent&);
+    void OnChatAction(wxWebViewEvent&);
     void OnClose(wxCommandEvent&);
     void OnWebViewNav(wxWebViewEvent&);
 

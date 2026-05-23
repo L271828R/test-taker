@@ -119,11 +119,15 @@ std::string BuildTurnChatHTML(const QuestionTurn& examTurn,
                                const std::vector<TurnChatTurn>& turns,
                                bool darkMode,
                                const std::set<int>& savedIndices,
-                               const std::string& pendingQ) {
+                               const std::string& pendingQ,
+                               bool busy) {
     std::ostringstream body;
 
+    bool inputDisabled = busy || turnIndex < 0;
+    auto dis = [](bool d) -> std::string { return d ? " disabled" : ""; };
+
     body << R"(<style>
-body { padding: 12px; }
+body { padding: 12px; padding-bottom: 80px; }
 .turn { margin-bottom:16px; }
 .turn-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; }
 .turn:hover .tc-save-btn { opacity:1; }
@@ -140,6 +144,21 @@ body { padding: 12px; }
 .a pre { font-size:85%; }
 .thinking { color:var(--text-muted); font-style:italic; padding:8px 12px; }
 .empty { color:var(--text-muted); font-style:italic; }
+#chat-input { position:fixed; bottom:0; left:0; right:0;
+  background:var(--bg); border-top:1px solid var(--border);
+  padding:6px 8px; z-index:50;
+  display:flex; gap:6px; align-items:flex-end; }
+#chat-ans { flex:1; min-height:50px; max-height:120px; resize:vertical;
+  padding:6px 8px; border:1px solid var(--border); border-radius:4px;
+  background:var(--surface); color:var(--text);
+  font-family:inherit; font-size:.95em; line-height:1.4; }
+#chat-ans:focus { outline:2px solid var(--link); outline-offset:-1px; }
+#chat-send { padding:6px 16px; border-radius:4px;
+  border:1px solid var(--link); background:var(--link);
+  color:#fff; cursor:pointer; font-weight:600; font-size:.9em;
+  white-space:nowrap; align-self:flex-end; }
+#chat-send:disabled { opacity:.38; cursor:default; background:var(--surface);
+  color:var(--text-muted); border-color:var(--border); }
 </style>
 )";
 
@@ -172,7 +191,34 @@ body { padding: 12px; }
         }
     }
 
-    body << "<script>window.scrollTo(0,document.body.scrollHeight);</script>";
+    body << "<div id='chat-input'>"
+         << "<textarea id='chat-ans' placeholder='Ask a follow-up\xe2\x80\xa6'"
+         << dis(inputDisabled) << "></textarea>"
+         << "<button id='chat-send' onclick='chatAction(\"send\")'"
+         << dis(inputDisabled) << ">Send</button>"
+         << "</div>\n";
+
+    body << R"(<script>
+function chatAction(act) {
+  var t = document.getElementById('chat-ans');
+  var text = t ? t.value : '';
+  if (act === 'send' && !text.trim()) return;
+  var payload = JSON.stringify({action: act, text: text});
+  if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.chatAction)
+    window.webkit.messageHandlers.chatAction.postMessage(payload);
+  if (act === 'send' && t) t.value = '';
+}
+(function() {
+  var a = document.getElementById('chat-ans');
+  if (!a) return;
+  a.addEventListener('keydown', function(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') chatAction('send');
+  });
+  if (!a.disabled) { a.focus(); a.setSelectionRange(a.value.length, a.value.length); }
+  window.scrollTo(0, document.body.scrollHeight);
+})();
+</script>
+)";
 
     return BuildHTML(body.str(), "Discussion", darkMode);
 }

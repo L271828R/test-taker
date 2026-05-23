@@ -33,6 +33,28 @@ struct ExamConfig {
 // Called by both StartSession and ResumeSession so neither can miss a field.
 void ApplyProjectExamConfig(const ProjectConfig& pcfg, ExamConfig& cfg);
 
+// State snapshot used to render the sticky input footer in the Exam tab.
+struct ExamInputState {
+    bool        active          = false;  // show input section at all
+    bool        busy            = false;  // disable all interactive elements
+    bool        hasQuestion     = false;  // a question is currently displayed
+    bool        readyForNext    = false;  // no question yet, not busy — show "Next question" button
+    bool        canFlag         = false;  // ≥1 turn completed → flag enabled
+    bool        lastTurnFlagged = false;  // last turn is flagged → show "Unflag"
+    std::string hintText;                 // shown when non-empty
+    std::string statusText;               // status line below input row
+};
+
+// Build the sticky HTML input footer for the Exam tab.
+// Returns empty string when s.active is false.
+std::string BuildExamInputSection(const ExamInputState& s);
+
+// Build the current-question block.
+// Returns empty string when question is empty and not busy.
+// Returns a loading placeholder when question is empty but busy is true.
+// Returns the rendered question HTML otherwise.
+std::string BuildCurrentQuestionHTML(const std::string& question, bool busy);
+
 // Build the first prompt: asks LLM to generate question #1.
 std::string BuildFirstQuestionPrompt(const ExamConfig& cfg);
 

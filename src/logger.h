@@ -10,4 +10,5 @@ public:
 private:
     Logger();
     std::ofstream m_file;
+    int           m_pid = 0;
 };

@@ -40,4 +40,5 @@ std::string BuildTurnChatHTML(const QuestionTurn& examTurn,
                                const std::vector<TurnChatTurn>& turns,
                                bool darkMode,
                                const std::set<int>& savedIndices = {},
-                               const std::string& pendingQ = "");
+                               const std::string& pendingQ = "",
+                               bool busy = false);

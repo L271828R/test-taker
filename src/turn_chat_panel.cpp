@@ -10,10 +10,9 @@
 
 namespace fs = std::filesystem;
 
-enum { ID_TC_SEND = wxID_HIGHEST + 200, ID_TC_CLOSE };
+enum { ID_TC_CLOSE = wxID_HIGHEST + 200 };
 
 wxBEGIN_EVENT_TABLE(TurnChatPanel, wxPanel)
-    EVT_BUTTON(ID_TC_SEND,  TurnChatPanel::OnSend)
     EVT_BUTTON(ID_TC_CLOSE, TurnChatPanel::OnClose)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, TurnChatPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
@@ -41,27 +40,16 @@ TurnChatPanel::TurnChatPanel(wxWindow* parent, bool darkMode,
     outer->Add(headerRow, 0, wxEXPAND | wxTOP, 4);
 
     m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
+    // Stub page so chatAction is always defined before AddScriptMessageHandler fires.
+    m_webView->SetPage(
+        "<html><head><script>function chatAction(a,t){}</script></head><body></body></html>", "");
+    wxTheApp->CallAfter([this]() {
+        if (m_webView) m_webView->AddScriptMessageHandler("chatAction");
+    });
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+                    &TurnChatPanel::OnChatAction, this);
     outer->Add(m_webView, 1, wxEXPAND);
 
-    auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
-    m_inputCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-                                 wxDefaultPosition, wxSize(-1, 60),
-                                 wxTE_MULTILINE);
-    m_sendBtn = new wxButton(this, ID_TC_SEND, "Ask");
-
-    if (m_darkMode) {
-        wxColour bg(28, 33, 40);
-        wxColour fg(230, 237, 243);
-        m_inputCtrl->SetBackgroundColour(bg);
-        m_inputCtrl->SetForegroundColour(fg);
-        SetBackgroundColour(wxColour(13, 17, 23));
-    }
-
-    inputRow->Add(m_inputCtrl, 1, wxEXPAND | wxALL, 6);
-    inputRow->Add(m_sendBtn, 0, wxALIGN_BOTTOM | wxALL, 6);
-    outer->Add(inputRow, 0, wxEXPAND);
-
-    m_sendBtn->Disable();
     SetSizer(outer);
     Render();
 }
@@ -81,8 +69,6 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
     m_busy         = false;
     m_savedIndices.clear();
     m_turns        = LoadTurnChat(sessionFile, turnIndex);
-    m_sendBtn->Enable();
-    m_inputCtrl->Clear();
 
     std::string label = "Q" + std::to_string(turnIndex + 1)
                       + " \xe2\x80\x94 " + ScoreLabel(turn.score);
@@ -104,9 +90,8 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
             : starterDisplayQ);
 
     if (!starterMessage.empty() && !starterAlreadyFired(displayQ)) {
-        // Auto-fire the starter prompt — same flow as OnSend but with a synthetic question.
+        // Auto-fire the starter prompt — same flow as OnChatAction but with a synthetic question.
         m_busy = true;
-        m_sendBtn->Enable(false);
         Logger::get().log("OpenTurn firing starter: " + displayQ);
         Render(displayQ);
 
@@ -119,7 +104,6 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
             LLMResult res = InvokeLLM(starterMessage, cfg);
             wxTheApp->CallAfter([this, res, sf, ti, displayQ]() {
                 m_busy = false;
-                m_sendBtn->Enable(true);
                 std::string answer = res.ok ? res.text : ("Error: " + res.error);
                 TurnChatTurn t{displayQ, answer};
                 m_turns.push_back(t);
@@ -137,17 +121,6 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
 // ---------------------------------------------------------------------------
 void TurnChatPanel::SetDarkMode(bool dark) {
     m_darkMode = dark;
-    if (dark) {
-        m_inputCtrl->SetBackgroundColour(wxColour(28, 33, 40));
-        m_inputCtrl->SetForegroundColour(wxColour(230, 237, 243));
-        SetBackgroundColour(wxColour(13, 17, 23));
-    } else {
-        m_inputCtrl->SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
-        m_inputCtrl->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
-        SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
-    }
-    m_inputCtrl->Refresh();
-    Refresh();
     Render();
 }
 
@@ -158,7 +131,6 @@ void TurnChatPanel::Reset() {
     m_examTurn    = {};
     m_busy        = false;
     m_savedIndices.clear();
-    m_sendBtn->Disable();
     m_titleLabel->SetLabel("Follow-up discussion");
     Render();
 }
@@ -171,7 +143,7 @@ void TurnChatPanel::OnClose(wxCommandEvent&) {
 // ---------------------------------------------------------------------------
 std::string TurnChatPanel::BuildChatHTML(const std::string& pendingQ) const {
     return BuildTurnChatHTML(m_examTurn, m_turnIndex, m_turns,
-                             m_darkMode, m_savedIndices, pendingQ);
+                             m_darkMode, m_savedIndices, pendingQ, m_busy);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,15 +152,40 @@ void TurnChatPanel::Render(const std::string& pendingQ) {
 }
 
 // ---------------------------------------------------------------------------
-void TurnChatPanel::OnSend(wxCommandEvent&) {
-    if (m_busy || m_turnIndex < 0) return;
-    wxString raw = m_inputCtrl->GetValue().Trim();
-    if (raw.empty()) return;
+static std::string chatJsonField(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\":\"";
+    size_t pos = json.find(needle);
+    if (pos == std::string::npos) return "";
+    pos += needle.size();
+    std::string val;
+    while (pos < json.size()) {
+        char c = json[pos++];
+        if (c == '"') break;
+        if (c == '\\' && pos < json.size()) {
+            char e = json[pos++];
+            switch (e) {
+                case '"':  val += '"';  break;
+                case '\\': val += '\\'; break;
+                case 'n':  val += '\n'; break;
+                case 'r':  val += '\r'; break;
+                case 't':  val += '\t'; break;
+                default:   val += e;   break;
+            }
+        } else val += c;
+    }
+    return val;
+}
 
-    std::string question = raw.ToStdString();
-    m_inputCtrl->Clear();
+void TurnChatPanel::OnChatAction(wxWebViewEvent& evt) {
+    std::string payload = evt.GetString().ToStdString();
+    std::string action  = chatJsonField(payload, "action");
+    std::string text    = chatJsonField(payload, "text");
+
+    if (action != "send" || text.empty()) return;
+    if (m_busy || m_turnIndex < 0) return;
+
+    std::string question = text;
     m_busy = true;
-    m_sendBtn->Enable(false);
     Render(question);
 
     QuestionTurn      examTurn    = m_examTurn;
@@ -204,7 +201,6 @@ void TurnChatPanel::OnSend(wxCommandEvent&) {
         LLMResult res = InvokeLLM(prompt, cfg);
         wxTheApp->CallAfter([this, res, sessionFile, turnIndex, question]() {
             m_busy = false;
-            m_sendBtn->Enable(true);
 
             std::string answer = res.ok ? res.text : ("Error: " + res.error);
             if (answer.rfind("A: ", 0) == 0) answer = answer.substr(3);

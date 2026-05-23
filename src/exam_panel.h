@@ -29,13 +29,11 @@ public:
                       const LLMConfig&   llmCfg,
                       bool               darkMode);
 
-    // Reload a previous session from disk (called on startup if lastSessionFile is set).
     void ResumeSession(const std::string& projectDir,
                        const std::string& sessionFile,
                        const LLMConfig&   llmCfg,
                        bool               darkMode);
 
-    // Re-drill a single flagged question.
     void StartDrill(const std::string& projectDir,
                     const std::string& sessionFile,
                     int                questionIndex,
@@ -46,14 +44,12 @@ public:
     bool HasActiveSession() const { return m_active; }
     void SetDarkMode(bool dark);
     void AbandonSession();
-    void Clear();   // reset to idle state when switching projects
+    void Clear();
 
 private:
     SessionCompleteCallback   m_onComplete;
     DeepDiveCallback          m_onDeepDive;
     SavedConvoCallback        m_onSavedConvo;
-
-    // HistoryGroup is defined in exam_prompt.h
 
     bool              m_active        = false;
     bool              m_busy          = false;
@@ -65,22 +61,14 @@ private:
     bool              m_darkMode      = false;
     int               m_questionIndex = 0;
     std::string       m_currentQuestion;
+    std::string       m_hintText;
+    std::string       m_statusText;
     std::vector<QuestionTurn>  m_turns;
-    std::vector<HistoryGroup>  m_historyGroups;  // turns from completed past sessions
+    std::vector<HistoryGroup>  m_historyGroups;
 
-    wxSplitterWindow* m_splitter     = nullptr;
-    wxPanel*          m_leftPanel    = nullptr;
-    TurnChatPanel*    m_chatPanel    = nullptr;
-    wxWebView*        m_webView      = nullptr;
-    wxTextCtrl*       m_answerCtrl   = nullptr;
-    wxButton*         m_sendBtn         = nullptr;
-    wxButton*         m_skipBtn         = nullptr;
-    wxButton*         m_silentSkipBtn   = nullptr;
-    wxButton*         m_hintBtn         = nullptr;
-    wxButton*         m_flagBtn         = nullptr;
-    wxButton*         m_abandonBtn      = nullptr;
-    wxTextCtrl*       m_hintCtrl        = nullptr;
-    wxStaticText*     m_statusLabel     = nullptr;
+    wxSplitterWindow* m_splitter   = nullptr;
+    TurnChatPanel*    m_chatPanel  = nullptr;
+    wxWebView*        m_webView    = nullptr;
 
     void RequestFirstQuestion();
     void RequestNextQuestion();
@@ -88,12 +76,7 @@ private:
     void Render(bool scrollToBottom = false);
     std::string BuildExamHTML(bool scrollToBottom = false) const;
 
-    void OnSend(wxCommandEvent&);
-    void OnSkip(wxCommandEvent&);
-    void OnSilentSkip(wxCommandEvent&);
-    void OnHint(wxCommandEvent&);
-    void OnFlag(wxCommandEvent&);
-    void OnAbandon(wxCommandEvent&);
+    void OnExamAction(wxWebViewEvent&);
     void OnWebViewNav(wxWebViewEvent&);
 
     wxDECLARE_EVENT_TABLE();

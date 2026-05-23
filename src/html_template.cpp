@@ -316,6 +316,13 @@ tr:nth-child(even) td{background:var(--surface)}
   padding:3px 10px;border-radius:20px;pointer-events:none;
 }
 </style>
+<script>
+// Stubs so RunScript calls never throw "Can't find variable" if the exam
+// input section isn't present (e.g. the page is still loading or not active).
+// BuildExamInputSection overrides these with the real implementations.
+function setBusy(msg){}
+function showHint(text){}
+</script>
 </head>
 <body>
 )HTML" + body + R"HTML(

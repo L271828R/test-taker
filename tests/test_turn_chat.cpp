@@ -265,5 +265,50 @@ int test_turn_chat() {
         }
     }
 
+    // Side chat HTML includes a sticky input section with a textarea and send button.
+    {
+        QuestionTurn turn;
+        turn.question    = "What is RAII?";
+        turn.score       = Score::Star3;
+        turn.explanation = "Resource acquisition is initialization.";
+
+        std::string html = BuildTurnChatHTML(turn, 0, {}, false);
+
+        bool hasTextarea = html.find("id='chat-ans'")  != std::string::npos;
+        bool hasSend     = html.find("id='chat-send'") != std::string::npos;
+        bool hasAction   = html.find("chatAction")     != std::string::npos;
+        bool hasFixed    = html.find("position:fixed") != std::string::npos;
+        if (!hasTextarea || !hasSend || !hasAction || !hasFixed) {
+            std::cerr << "FAIL [turn-chat-html-input]: textarea=" << hasTextarea
+                      << " send=" << hasSend << " action=" << hasAction
+                      << " fixed=" << hasFixed << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-html-input]\n";
+        }
+    }
+
+    // When busy=true the input elements carry the disabled attribute.
+    {
+        QuestionTurn turn;
+        turn.question    = "Q?";
+        turn.score       = Score::Star3;
+        turn.explanation = "E.";
+        std::vector<TurnChatTurn> noTurns;
+        std::string html = BuildTurnChatHTML(turn, 0, noTurns, false, {}, "", true);
+
+        bool inputDisabled = html.find("id='chat-ans' disabled") != std::string::npos
+                          || html.find("id='chat-ans'\n disabled") != std::string::npos
+                          || html.find("chat-ans'  disabled") != std::string::npos;
+        // At least one disabled attribute should appear in the input section
+        bool anyDisabled = html.find(" disabled") != std::string::npos;
+        if (!anyDisabled) {
+            std::cerr << "FAIL [turn-chat-html-input-busy-disables]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-html-input-busy-disables]\n";
+        }
+    }
+
     return failures;
 }

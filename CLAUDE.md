@@ -54,6 +54,18 @@ Headers are the public interface. A reader should understand a module by reading
 - Raw string literals (`R"HTML(...)HTML"`) must not be broken mid-tag. If you need to splice a runtime value in, end the literal at a clean boundary (end of attribute value, end of line).
 - Keep functions under ~50 lines. If a function is growing, extract a named helper.
 
+## Debugging crashes
+
+When the app crashes or shows a JS error dialog, see **`docs/DEBUG.md`** for the full
+procedure. Quick summary:
+
+- **macOS crash reports** land in `~/Library/Logs/DiagnosticReports/test-taker-*.ips` — read them first before touching code.
+- **Core dumps:** `ulimit -c unlimited && ./build-debug/test-taker` — core file appears in the working directory.
+- **Debug binary:** `cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug && cmake --build build-debug` — keeps `build/` (Release) intact.
+- **lldb post-mortem:** `lldb ./build-debug/test-taker -c core` then `bt all`.
+- **Near-zero crash address** (e.g. `0x31f`) → null pointer + field offset; find which panel member is uninitialised.
+- **"Can't find variable: X" JS errors** → `RunScript` fired before the page finished loading; add a stub for `X` to the base `<head>` in `html_template.cpp`.
+
 ## Content creation features (in progress)
 
 The app is being extended with a **Create** tab for LLM-assisted markdown generation. Key design decisions:

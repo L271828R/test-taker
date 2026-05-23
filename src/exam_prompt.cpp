@@ -62,6 +62,139 @@ static void AppendTopicWeights(std::ostringstream& out, const ExamConfig& cfg) {
 }
 
 // ---------------------------------------------------------------------------
+std::string BuildExamInputSection(const ExamInputState& s) {
+    if (!s.active) return "";
+
+    auto dis = [](bool d) -> std::string { return d ? " disabled" : ""; };
+    bool inputDis = s.busy || !s.hasQuestion;
+
+    std::string hintHTML;
+    if (!s.hintText.empty()) {
+        hintHTML = "<div id='exam-hint'>"
+                   + ProcessInline(s.hintText)
+                   + "</div>\n";
+    }
+
+    std::string flagLabel = s.lastTurnFlagged ? "Unflag" : "Flag for review";
+
+    std::ostringstream out;
+    out << R"(<style>
+body{display:flex;flex-direction:column;min-height:100vh;}
+#exam-input{background:var(--bg);
+  border-top:1px solid var(--border);padding:8px 12px 4px;z-index:50;}
+#exam-hint{background:#fffbe6;color:#6a4400;border-radius:4px;
+  padding:6px 10px;margin-bottom:6px;font-size:.9em;}
+.dark #exam-hint{background:#2a2200;color:#f0d060;}
+#exam-input-row{display:flex;gap:8px;align-items:flex-start;}
+#ans{flex:1;min-height:160px;resize:vertical;padding:8px;
+  border:1px solid var(--border);border-radius:4px;
+  background:var(--surface);color:var(--text);
+  font-family:inherit;font-size:1em;line-height:1.4;}
+#ans:focus{outline:2px solid var(--link);outline-offset:-1px;}
+#exam-btns{display:flex;flex-direction:column;gap:3px;min-width:130px;}
+.ebtn{padding:5px 10px;border-radius:4px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);cursor:pointer;
+  font-size:.82em;text-align:left;white-space:nowrap;}
+.ebtn:hover:not(:disabled){background:var(--link);color:#fff;border-color:var(--link);}
+.ebtn:disabled{opacity:.38;cursor:default;}
+#btn-submit{background:var(--link);color:#fff;border-color:var(--link);font-weight:600;}
+#btn-submit:disabled{background:var(--surface);color:var(--text-muted);border-color:var(--border);}
+#btn-next{background:var(--link);color:#fff;border-color:var(--link);font-weight:600;font-size:.95em;}
+#btn-next:hover{opacity:.85;}
+#btn-abandon{color:#c0392b;border-color:#c0392b;margin-top:6px;}
+#btn-abandon:hover:not(:disabled){background:#c0392b;color:#fff;}
+#exam-status{font-size:.8em;color:var(--text-muted);margin-top:4px;min-height:1.1em;}
+</style>
+)";
+
+    if (s.readyForNext) {
+        // No question yet and not busy — show a single prominent "Next question" button.
+        out << hintHTML
+            << "<div id='exam-input'>\n"
+            << "<div id='exam-input-row'>\n"
+            << "<div style='flex:1'></div>\n"   // spacer so btns stay right-aligned
+            << "<div id='exam-btns'>\n"
+            << "<button id='btn-next' class='ebtn' onclick='examAction(\"nextQuestion\")'>"
+               "\xe2\x96\xb6\xef\xb8\x8f Next question</button>\n"  // ▶️ Next question
+            << "<button id='btn-flag' class='ebtn' onclick='examAction(\"flag\")'"
+            << dis(!s.canFlag) << ">" << EscapeHTML(flagLabel) << "</button>\n"
+            << "<button id='btn-abandon' class='ebtn' onclick='examAction(\"abandon\")'>"
+               "End Session</button>\n"
+            << "</div>\n"
+            << "</div>\n"
+            << "<div id='exam-status'>" << EscapeHTML(s.statusText) << "</div>\n"
+            << "</div>\n";
+    } else {
+        out << hintHTML
+            << "<div id='exam-input'>\n"
+            << "<div id='exam-input-row'>\n"
+            << "<textarea id='ans' placeholder='Type your answer\xe2\x80\xa6'"
+            << dis(s.busy) << "></textarea>\n"
+            << "<div id='exam-btns'>\n"
+            << "<button id='btn-submit' class='ebtn' onclick='examAction(\"submit\")'"
+            << dis(inputDis) << ">Submit</button>\n"
+            << "<button id='btn-skip' class='ebtn' onclick='examAction(\"skip\")'"
+            << dis(inputDis) << ">I don\xe2\x80\x99t know</button>\n"
+            << "<button id='btn-silent' class='ebtn' onclick='examAction(\"silentSkip\")'"
+            << dis(inputDis) << ">Skip \xe2\x8f\xad</button>\n"
+            << "<button id='btn-hint' class='ebtn' onclick='examAction(\"hint\")'"
+            << dis(inputDis) << ">\xf0\x9f\x92\xa1 Hint</button>\n"
+            << "<button id='btn-flag' class='ebtn' onclick='examAction(\"flag\")'"
+            << dis(!s.canFlag) << ">" << EscapeHTML(flagLabel) << "</button>\n"
+            << "<button id='btn-abandon' class='ebtn' onclick='examAction(\"abandon\")'>"
+               "End Session</button>\n"
+            << "</div>\n"
+            << "</div>\n"
+            << "<div id='exam-status'>" << EscapeHTML(s.statusText) << "</div>\n"
+            << "</div>\n";
+    }
+
+    out << R"(<script>
+function examAction(act){
+  var payload=JSON.stringify({action:act,answer:(document.getElementById('ans')||{}).value||''});
+  if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.examAction)
+    window.webkit.messageHandlers.examAction.postMessage(payload);
+}
+function setBusy(msg){
+  ['btn-submit','btn-skip','btn-silent','btn-hint','btn-flag','ans']
+    .forEach(function(id){var e=document.getElementById(id);if(e)e.disabled=true;});
+  var a=document.getElementById('ans');if(a)a.value='';
+  var s=document.getElementById('exam-status');if(s&&msg)s.textContent=msg;
+}
+function showHint(text){
+  var h=document.getElementById('exam-hint');
+  if(h){h.style.display='';h.innerHTML=text;}
+  else{
+    var d=document.createElement('div');d.id='exam-hint';d.innerHTML=text;
+    var ei=document.getElementById('exam-input');
+    if(ei)ei.insertBefore(d,ei.firstChild);
+  }
+}
+(function(){
+  var a=document.getElementById('ans');
+  if(a)a.addEventListener('focus',function(){examAction('focusInput');});
+})();
+</script>
+)";
+
+    return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::string BuildCurrentQuestionHTML(const std::string& question, bool busy) {
+    if (question.empty()) {
+        if (!busy) return "";
+        return "<div class='current-question'>"
+               "<em style='color:var(--text-muted)'>"
+               "\xe2\x8f\xb3 Generating question\xe2\x80\xa6"  // ⏳ Generating question…
+               "</em></div>\n";
+    }
+    return "<div class='current-question'>"
+           + RenderMarkdown(question)
+           + "</div>\n";
+}
+
+// ---------------------------------------------------------------------------
 std::string BuildFirstQuestionPrompt(const ExamConfig& cfg) {
     std::ostringstream out;
     out << "You are an expert interviewer and examiner. Your role is to test the user's "

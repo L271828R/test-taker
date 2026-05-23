@@ -999,5 +999,282 @@ int test_exam_prompt() {
         }
     }
 
+    // ── BuildExamInputSection ─────────────────────────────────────────────────
+
+    // No input section when session is idle.
+    {
+        ExamInputState s;
+        s.active = false;
+        std::string html = BuildExamInputSection(s);
+        if (!html.empty()) {
+            std::cerr << "FAIL [exam-input-hidden-when-idle]: expected empty string\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-hidden-when-idle]\n";
+        }
+    }
+
+    // Input section present when session is active.
+    {
+        ExamInputState s;
+        s.active = true; s.hasQuestion = true;
+        std::string html = BuildExamInputSection(s);
+        bool hasTextarea = html.find("<textarea") != std::string::npos;
+        bool hasSubmit   = html.find("btn-submit") != std::string::npos;
+        if (!hasTextarea || !hasSubmit) {
+            std::cerr << "FAIL [exam-input-present-when-active]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-present-when-active]\n";
+        }
+    }
+
+    // Submit disabled when busy.
+    {
+        ExamInputState s;
+        s.active = true; s.busy = true; s.hasQuestion = true;
+        std::string html = BuildExamInputSection(s);
+        // All action buttons should carry the disabled attribute.
+        bool submitDis = html.find("btn-submit' class='ebtn' onclick='examAction(\"submit\")' disabled") != std::string::npos;
+        if (!submitDis) {
+            std::cerr << "FAIL [exam-input-disabled-when-busy]: submit not disabled\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-disabled-when-busy]\n";
+        }
+    }
+
+    // Submit enabled when active, not busy, and has a question.
+    {
+        ExamInputState s;
+        s.active = true; s.busy = false; s.hasQuestion = true;
+        std::string html = BuildExamInputSection(s);
+        // btn-submit should NOT have disabled immediately after its onclick
+        bool hasNoDisabled = html.find("examAction(\"submit\")'>Submit") != std::string::npos;
+        if (!hasNoDisabled) {
+            std::cerr << "FAIL [exam-input-enabled-when-ready]: submit should not be disabled\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-enabled-when-ready]\n";
+        }
+    }
+
+    // Hint text appears in output.
+    {
+        ExamInputState s;
+        s.active = true; s.hintText = "Think about scope rules.";
+        std::string html = BuildExamInputSection(s);
+        bool hasHint = html.find("Think about scope rules") != std::string::npos;
+        if (!hasHint) {
+            std::cerr << "FAIL [exam-input-hint-shown]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-hint-shown]\n";
+        }
+    }
+
+    // Status text appears in output.
+    {
+        ExamInputState s;
+        s.active = true; s.statusText = "Question 3 of 10";
+        std::string html = BuildExamInputSection(s);
+        bool hasStat = html.find("Question 3 of 10") != std::string::npos;
+        if (!hasStat) {
+            std::cerr << "FAIL [exam-input-status-shown]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-status-shown]\n";
+        }
+    }
+
+    // Flag button disabled when no turns completed.
+    {
+        ExamInputState s;
+        s.active = true; s.canFlag = false;
+        std::string html = BuildExamInputSection(s);
+        bool flagDis = html.find("btn-flag' class='ebtn' onclick='examAction(\"flag\")' disabled") != std::string::npos;
+        if (!flagDis) {
+            std::cerr << "FAIL [exam-input-flag-disabled-without-turns]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-flag-disabled-without-turns]\n";
+        }
+    }
+
+    // Submit disabled when no question is currently shown.
+    {
+        ExamInputState s;
+        s.active = true; s.busy = false; s.hasQuestion = false;
+        std::string html = BuildExamInputSection(s);
+        bool submitDis = html.find("examAction(\"submit\")' disabled") != std::string::npos;
+        if (!submitDis) {
+            std::cerr << "FAIL [exam-input-no-question-disables-submit]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-no-question-disables-submit]\n";
+        }
+    }
+
+    // "Unflag" label when last turn is flagged.
+    {
+        ExamInputState s;
+        s.active = true; s.canFlag = true; s.lastTurnFlagged = true;
+        std::string html = BuildExamInputSection(s);
+        bool hasUnflag = html.find("Unflag") != std::string::npos;
+        bool noFlag    = html.find(">Flag for review<") == std::string::npos;
+        if (!hasUnflag || !noFlag) {
+            std::cerr << "FAIL [exam-input-unflag-label]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-unflag-label]\n";
+        }
+    }
+
+    // Exam input uses a flex-column body so the bar anchors to the viewport
+    // bottom without losing the content's natural side margins.
+    {
+        ExamInputState s;
+        s.active = true;
+        std::string html = BuildExamInputSection(s);
+        bool hasFlex   = html.find("display:flex")    != std::string::npos;
+        bool hasColumn = html.find("flex-direction:column") != std::string::npos;
+        bool hasMinH   = html.find("min-height:100vh") != std::string::npos;
+        bool noFixed   = html.find("position:fixed")  == std::string::npos;
+        bool noSticky  = html.find("position:sticky") == std::string::npos;
+        if (!hasFlex || !hasColumn || !hasMinH || !noFixed || !noSticky) {
+            std::cerr << "FAIL [exam-input-flex-bottom]: flex=" << hasFlex
+                      << " col=" << hasColumn << " minh=" << hasMinH
+                      << " noFixed=" << noFixed << " noSticky=" << noSticky << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-flex-bottom]\n";
+        }
+    }
+
+    // setBusy must NOT disable btn-abandon so "End Session" stays clickable during loading.
+    {
+        ExamInputState s;
+        s.active = true;
+        std::string html = BuildExamInputSection(s);
+        // The setBusy JS function must not include 'btn-abandon' in its disabled list.
+        auto setBusyPos = html.find("function setBusy");
+        bool abandonInSetBusy = false;
+        if (setBusyPos != std::string::npos) {
+            // Find the closing brace of setBusy
+            size_t braceDepth = 0, pos = setBusyPos;
+            bool started = false;
+            while (pos < html.size()) {
+                if (html[pos] == '{') { started = true; ++braceDepth; }
+                else if (html[pos] == '}' && started) { if (--braceDepth == 0) { ++pos; break; } }
+                ++pos;
+            }
+            std::string setBusyBody = html.substr(setBusyPos, pos - setBusyPos);
+            abandonInSetBusy = setBusyBody.find("btn-abandon") != std::string::npos;
+        }
+        if (abandonInSetBusy) {
+            std::cerr << "FAIL [exam-input-setbusy-spares-abandon]: setBusy must not disable btn-abandon\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-setbusy-spares-abandon]\n";
+        }
+    }
+
+    // Loading placeholder: when busy and no question, question area shows a spinner.
+    {
+        std::string loading = BuildCurrentQuestionHTML("", true);
+        bool hasSpinner = loading.find("\xe2\x8f\xb3") != std::string::npos  // ⏳
+                       || loading.find("loading") != std::string::npos
+                       || loading.find("Loading") != std::string::npos
+                       || loading.find("generating") != std::string::npos
+                       || loading.find("Generating") != std::string::npos;
+        if (!hasSpinner) {
+            std::cerr << "FAIL [exam-question-loading-placeholder]: no loading indicator when busy+empty\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-question-loading-placeholder]\n";
+        }
+    }
+    // When not busy and empty, no question div is emitted.
+    {
+        std::string empty = BuildCurrentQuestionHTML("", false);
+        if (!empty.empty()) {
+            std::cerr << "FAIL [exam-question-empty-not-busy]: should return empty when no question and not busy\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-question-empty-not-busy]\n";
+        }
+    }
+    // When a question is present (not busy), it renders the question text.
+    {
+        std::string q = BuildCurrentQuestionHTML("What is RAII?", false);
+        bool hasQ = q.find("RAII") != std::string::npos;
+        if (!hasQ) {
+            std::cerr << "FAIL [exam-question-renders-text]: question text not found in output\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-question-renders-text]\n";
+        }
+    }
+
+    // Textarea must be tall enough to fill available space (not the tiny 72px default).
+    {
+        ExamInputState s;
+        s.active = true;
+        std::string html = BuildExamInputSection(s);
+        // min-height must be at least 150px so there's no wasted dark space below it.
+        bool hasTallAns = html.find("min-height:150px") != std::string::npos
+                       || html.find("min-height:160px") != std::string::npos
+                       || html.find("min-height:180px") != std::string::npos
+                       || html.find("min-height:200px") != std::string::npos;
+        if (!hasTallAns) {
+            std::cerr << "FAIL [exam-input-textarea-height]: textarea #ans needs min-height >= 150px\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-textarea-height]\n";
+        }
+    }
+
+    // readyForNext=true shows an enabled "Next question" button.
+    {
+        ExamInputState s;
+        s.active       = true;
+        s.readyForNext = true;
+        std::string html = BuildExamInputSection(s);
+        bool hasBtn = html.find("nextQuestion") != std::string::npos
+                   || html.find("next-question") != std::string::npos
+                   || html.find("Next question") != std::string::npos
+                   || html.find("Next Question") != std::string::npos;
+        // The button must NOT be disabled
+        bool btnDisabled = false;
+        auto pos = html.find("nextQuestion");
+        if (pos != std::string::npos) {
+            // look for 'disabled' within ~100 chars of the button
+            auto snippet = html.substr(pos < 100 ? 0 : pos - 100, 200);
+            btnDisabled = snippet.find("disabled") != std::string::npos;
+        }
+        if (!hasBtn || btnDisabled) {
+            std::cerr << "FAIL [exam-input-next-question-btn]: readyForNext must show enabled next-question button"
+                      << " hasBtn=" << hasBtn << " btnDisabled=" << btnDisabled << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-next-question-btn]\n";
+        }
+    }
+    // readyForNext=false (has a question) must NOT show the next-question button.
+    {
+        ExamInputState s;
+        s.active       = true;
+        s.readyForNext = false;
+        s.hasQuestion  = true;
+        std::string html = BuildExamInputSection(s);
+        bool hasBtn = html.find("nextQuestion") != std::string::npos;
+        if (hasBtn) {
+            std::cerr << "FAIL [exam-input-no-next-question-when-has-q]: nextQuestion button must not appear when hasQuestion=true\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-input-no-next-question-when-has-q]\n";
+        }
+    }
+
     return failures;
 }

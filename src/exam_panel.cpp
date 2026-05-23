@@ -22,22 +22,7 @@
 
 namespace fs = std::filesystem;
 
-enum {
-    ID_EXAM_SEND = wxID_HIGHEST + 100,
-    ID_EXAM_SKIP,
-    ID_EXAM_SILENT_SKIP,
-    ID_EXAM_HINT,
-    ID_EXAM_FLAG,
-    ID_EXAM_ABANDON,
-};
-
 wxBEGIN_EVENT_TABLE(ExamPanel, wxPanel)
-    EVT_BUTTON(ID_EXAM_SEND,        ExamPanel::OnSend)
-    EVT_BUTTON(ID_EXAM_SKIP,        ExamPanel::OnSkip)
-    EVT_BUTTON(ID_EXAM_SILENT_SKIP, ExamPanel::OnSilentSkip)
-    EVT_BUTTON(ID_EXAM_HINT,        ExamPanel::OnHint)
-    EVT_BUTTON(ID_EXAM_FLAG,        ExamPanel::OnFlag)
-    EVT_BUTTON(ID_EXAM_ABANDON,     ExamPanel::OnAbandon)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, ExamPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
@@ -52,75 +37,29 @@ ExamPanel::ExamPanel(wxWindow* parent,
 {
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
-    // ── Splitter: left = exam view, right = side chat ─────────────────────
     m_splitter = new wxSplitterWindow(this, wxID_ANY,
                                       wxDefaultPosition, wxDefaultSize,
                                       wxSP_3D | wxSP_LIVE_UPDATE);
     m_splitter->SetMinimumPaneSize(200);
 
-    m_leftPanel = new wxPanel(m_splitter);
-    auto* leftSizer = new wxBoxSizer(wxVERTICAL);
-
-    m_webView = wxWebView::New(m_leftPanel, wxID_ANY, "about:blank");
-    m_webView->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent& evt) {
-        if (m_splitter->IsSplit()) {
-            m_splitter->Unsplit(m_chatPanel);
-            m_chatOpen = false;
-            m_webView->RunScript(
-                "var o=document.getElementById('chat-overlay');"
-                "if(o)o.classList.remove('active');");
-        }
-        evt.Skip();
+    m_webView = wxWebView::New(m_splitter, wxID_ANY, "about:blank");
+    // Replace about:blank immediately with a tiny stub page that defines
+    // setBusy/showHint. The bundled mermaid+highlight page from Render() is
+    // ~20 MB and takes too long; without this, RunScript("setBusy(...)") fires
+    // against about:blank (which has no JS) and shows an error dialog.
+    m_webView->SetPage(
+        "<html><head><script>"
+        "function setBusy(m){}"
+        "function showHint(t){}"
+        "</script></head><body></body></html>", "");
+    // Deferred: AddScriptMessageHandler internally calls RunScript which pumps
+    // the event loop. Calling it here fires OnProjectActivated before sibling
+    // panels (e.g. ReviewPanel) are constructed, causing a null-deref crash.
+    wxTheApp->CallAfter([this]() {
+        if (m_webView) m_webView->AddScriptMessageHandler("examAction");
     });
-    leftSizer->Add(m_webView, 1, wxEXPAND);
-
-    // ── Answer input row ──────────────────────────────────────────────────
-    auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
-    m_answerCtrl = new wxTextCtrl(m_leftPanel, wxID_ANY, "",
-        wxDefaultPosition, wxSize(-1, 80), wxTE_MULTILINE | wxTE_PROCESS_ENTER);
-    m_answerCtrl->Bind(wxEVT_SET_FOCUS, [this](wxFocusEvent& evt) {
-        if (m_splitter->IsSplit()) {
-            m_splitter->Unsplit(m_chatPanel);
-            m_chatOpen = false;
-            m_webView->RunScript(
-                "var o=document.getElementById('chat-overlay');"
-                "if(o)o.classList.remove('active');");
-        }
-        evt.Skip();
-    });
-    m_sendBtn       = new wxButton(m_leftPanel, ID_EXAM_SEND,        "Submit");
-    m_skipBtn       = new wxButton(m_leftPanel, ID_EXAM_SKIP,        "I don't know");
-    m_silentSkipBtn = new wxButton(m_leftPanel, ID_EXAM_SILENT_SKIP, wxString::FromUTF8("Skip \xe2\x8f\xad"));
-    m_silentSkipBtn->SetToolTip("Skip this question silently — not sent to the LLM");
-    m_hintBtn    = new wxButton(m_leftPanel, ID_EXAM_HINT,    wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
-    m_hintBtn->SetToolTip("Get a nudge without revealing the answer");
-    m_flagBtn    = new wxButton(m_leftPanel, ID_EXAM_FLAG,    "Flag for review");
-    m_abandonBtn = new wxButton(m_leftPanel, ID_EXAM_ABANDON, "End Session");
-
-    inputRow->Add(m_answerCtrl, 1, wxEXPAND | wxRIGHT, 4);
-    auto* btnCol = new wxBoxSizer(wxVERTICAL);
-    btnCol->Add(m_sendBtn,       0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_skipBtn,       0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_silentSkipBtn, 0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_hintBtn,       0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_flagBtn,       0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_abandonBtn,    0, wxEXPAND);
-    inputRow->Add(btnCol, 0, wxEXPAND);
-
-    // Hint strip — hidden until a hint arrives
-    m_hintCtrl = new wxTextCtrl(m_leftPanel, wxID_ANY, "",
-        wxDefaultPosition, wxSize(-1, 56),
-        wxTE_MULTILINE | wxTE_READONLY | wxTE_NO_VSCROLL | wxBORDER_NONE);
-    m_hintCtrl->SetBackgroundColour(wxColour(255, 251, 230));
-    m_hintCtrl->SetForegroundColour(wxColour(100, 70, 0));
-    m_hintCtrl->Hide();
-
-    m_statusLabel = new wxStaticText(m_leftPanel, wxID_ANY, "");
-
-    leftSizer->Add(m_hintCtrl, 0, wxEXPAND | wxLEFT | wxRIGHT | wxTOP, 6);
-    leftSizer->Add(inputRow, 0, wxEXPAND | wxALL, 6);
-    leftSizer->Add(m_statusLabel, 0, wxLEFT | wxBOTTOM, 8);
-    m_leftPanel->SetSizer(leftSizer);
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+                    &ExamPanel::OnExamAction, this);
 
     m_chatPanel = new TurnChatPanel(m_splitter, m_darkMode,
         [this]() {
@@ -132,34 +71,24 @@ ExamPanel::ExamPanel(wxWindow* parent,
         },
         [this]() { if (m_onSavedConvo) m_onSavedConvo(); });
 
-    // Start unsplit — chat opens when the user clicks Discuss
-    m_splitter->Initialize(m_leftPanel);
+    m_splitter->Initialize(m_webView);
 
     outer->Add(m_splitter, 1, wxEXPAND);
     SetSizer(outer);
-
-    // Start idle — no active session yet.
-    m_sendBtn->Disable();
-    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-    m_hintBtn->Disable();
-    m_flagBtn->Disable();
-    m_abandonBtn->Disable();
-    Render();
+    // No Render() here — OnProjectActivated always calls either ResumeSession
+    // or Clear(), both of which call Render(). The stub page above is enough.
 }
 
 // ---------------------------------------------------------------------------
 void ExamPanel::SetDarkMode(bool dark) {
     m_darkMode = dark;
     m_chatPanel->SetDarkMode(dark);
-    if (dark) {
-        m_answerCtrl->SetBackgroundColour(wxColour(28, 33, 40));
-        m_answerCtrl->SetForegroundColour(wxColour(230, 237, 243));
-    } else {
-        m_answerCtrl->SetBackgroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOW));
-        m_answerCtrl->SetForegroundColour(wxSystemSettings::GetColour(wxSYS_COLOUR_WINDOWTEXT));
+    if (m_active) {
+        Logger::get().log("ExamPanel::SetDarkMode triggering Render active=1"
+                          "  busy=" + std::to_string(m_busy) +
+                          "  hasQ=" + std::to_string(!m_currentQuestion.empty()));
+        Render();
     }
-    m_answerCtrl->Refresh();
-    if (m_active) Render();
 }
 
 // ---------------------------------------------------------------------------
@@ -190,15 +119,12 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_turns.clear();
     m_currentQuestion.clear();
 
-    m_sendBtn->Enable();
-    m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-    m_flagBtn->Disable(); // enabled after first question is answered
-    m_abandonBtn->Enable();
-
     m_chatOpen = false;
     m_chatPanel->Reset();
     if (m_splitter->IsSplit()) m_splitter->Unsplit(m_chatPanel);
 
+    Logger::get().log("ExamPanel::StartSession topic=" + cfg.topic
+                      + "  total=" + std::to_string(cfg.totalQuestions));
     Render(true);  // show history + loading state at the bottom immediately
     RequestFirstQuestion();
 }
@@ -248,26 +174,25 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     m_active = !complete;
 
     if (complete) {
-        m_sendBtn->Disable();
-        m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-        m_hintBtn->Disable();
-        m_flagBtn->Enable(!turns.empty());
-        m_abandonBtn->Disable();
-        m_statusLabel->SetLabel("Session complete. See Review tab for results.");
+        m_statusText = "Session complete. See Review tab for results.";
     } else {
-        // Session was interrupted mid-way — re-enable input, ask next question.
-        m_sendBtn->Enable();
-        m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-        m_hintBtn->Enable();
-        m_flagBtn->Enable(!turns.empty());
-        m_abandonBtn->Enable();
+        // Session was interrupted mid-way — ask next question.
         int next = (int)turns.size() + 1;
-        m_statusLabel->SetLabel("Resuming — question " + std::to_string(next)
-                                + " of " + std::to_string(hdr.totalQuestions));
-        RequestNextQuestion();
+        m_statusText = "Resuming — question " + std::to_string(next)
+                     + " of " + std::to_string(hdr.totalQuestions);
     }
 
+    Logger::get().log("ExamPanel::ResumeSession"
+                      "  turns=" + std::to_string(turns.size()) +
+                      "  total=" + std::to_string(hdr.totalQuestions) +
+                      "  complete=" + std::to_string(complete) +
+                      "  m_busy=" + std::to_string(m_busy));
+
+    // Render only — do NOT auto-fire an LLM call on resume.
+    // The user clicks "Next question" when ready; this avoids an unwanted
+    // LLM ping (and disabled buttons) every time the app opens or the tab is visited.
     Render();
+
     Logger::get().log("Resumed session: " + sessionFile
                       + "  turns=" + std::to_string(turns.size())
                       + "  complete=" + std::to_string(complete));
@@ -297,13 +222,7 @@ void ExamPanel::StartDrill(const std::string& projectDir,
     m_currentQuestion = turns[questionIndex].question;
     m_cfg.totalQuestions = 1;
 
-    m_sendBtn->Enable();
-    m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-    m_hintBtn->Enable();
-    m_flagBtn->Enable();
-    m_abandonBtn->Enable();
-
-    m_statusLabel->SetLabel("Drill: " + m_currentQuestion.substr(0, 60));
+    m_statusText = "Drill: " + m_currentQuestion.substr(0, 60);
     Render();
 }
 
@@ -311,10 +230,8 @@ void ExamPanel::StartDrill(const std::string& projectDir,
 void ExamPanel::RequestFirstQuestion() {
     if (m_busy) return;
     m_busy = true;
-    m_statusLabel->SetLabel("Asking first question…");
-    m_sendBtn->Disable();
-    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-    m_hintBtn->Disable();
+    Logger::get().log("ExamPanel::RequestFirstQuestion m_busy=true");
+    m_webView->RunScript("if(typeof setBusy==='function')setBusy('Asking first question...')");
 
     ExamConfig  examCfg    = m_cfg;
     LLMConfig   llmCfg     = m_llmCfg;
@@ -322,7 +239,6 @@ void ExamPanel::RequestFirstQuestion() {
 
     std::thread([this, examCfg, llmCfg, projectDir]() {
         ExamConfig localCfg = examCfg;
-        // Per-question random weighted pick from the focus-area list
         if (!localCfg.focusAreaList.empty())
             localCfg.focusAreas = PickFocusArea(localCfg.focusAreaList);
         if (localCfg.useCorpus) {
@@ -337,26 +253,23 @@ void ExamPanel::RequestFirstQuestion() {
         auto result = InvokeLLM(prompt, llmCfg);
         wxTheApp->CallAfter([this, result]() {
             m_busy = false;
+            Logger::get().log("ExamPanel::RequestFirstQuestion callback m_busy=false ok="
+                              + std::to_string(result.ok));
             if (!result.ok) {
-                m_statusLabel->SetLabel("LLM error: " + result.error);
+                m_statusText = "LLM error: " + result.error;
                 Logger::get().log("ExamPanel LLM error: " + result.error);
+                Render();
                 return;
             }
             m_currentQuestion = result.text;
-            // Trim trailing whitespace/newlines
             while (!m_currentQuestion.empty() &&
                    (m_currentQuestion.back() == '\n' || m_currentQuestion.back() == '\r' ||
                     m_currentQuestion.back() == ' '))
                 m_currentQuestion.pop_back();
 
-            m_statusLabel->SetLabel("Question 1 of " + std::to_string(m_cfg.totalQuestions));
-            m_sendBtn->Enable();
-            m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-            m_hintBtn->Enable();
-            m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
-            m_hintCtrl->Clear(); m_hintCtrl->Hide();
-            m_leftPanel->GetSizer()->Layout();
-            Render(true);  // scroll to bottom to show the new question
+            m_hintText.clear();
+            m_statusText = "Question 1 of " + std::to_string(m_cfg.totalQuestions);
+            Render(true);
         });
     }).detach();
 }
@@ -365,10 +278,10 @@ void ExamPanel::RequestFirstQuestion() {
 void ExamPanel::RequestNextQuestion() {
     if (m_busy) return;
     m_busy = true;
-    m_sendBtn->Disable();
-    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-    m_hintBtn->Disable();
-    m_statusLabel->SetLabel("Asking next question…");
+    Logger::get().log("ExamPanel::RequestNextQuestion m_busy=true"
+                      "  qIdx=" + std::to_string(m_questionIndex) +
+                      "  turns=" + std::to_string(m_turns.size()));
+    m_webView->RunScript("if(typeof setBusy==='function')setBusy('Asking next question...')");
 
     ExamConfig  examCfg    = m_cfg;
     LLMConfig   llmCfg     = m_llmCfg;
@@ -395,31 +308,27 @@ void ExamPanel::RequestNextQuestion() {
         auto result = InvokeLLM(prompt, llmCfg);
         wxTheApp->CallAfter([this, result]() {
             m_busy = false;
+            Logger::get().log("ExamPanel::RequestNextQuestion callback m_busy=false ok="
+                              + std::to_string(result.ok));
             if (!result.ok) {
-                m_statusLabel->SetLabel("LLM error: " + result.error);
+                m_statusText = "LLM error: " + result.error;
+                Render();
                 return;
             }
             auto scored = ParseScoredResponse(result.text);
             if (!scored.nextQuestion.empty()) {
                 m_currentQuestion = scored.nextQuestion;
             } else {
-                // Fallback: treat whole response as the question
                 m_currentQuestion = result.text;
                 while (!m_currentQuestion.empty() &&
                        (m_currentQuestion.back() == '\n' ||
                         m_currentQuestion.back() == ' '))
                     m_currentQuestion.pop_back();
             }
-            int qNum = (int)m_turns.size() + 1;
-            m_statusLabel->SetLabel("Question " + std::to_string(qNum)
-                                    + " of " + std::to_string(m_cfg.totalQuestions));
-            m_sendBtn->Enable();
-            m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-            m_hintBtn->Enable();
-            m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
-            m_hintCtrl->Clear(); m_hintCtrl->Hide();
-            m_leftPanel->GetSizer()->Layout();
-            Render(true);  // scroll to bottom to show the new question
+            m_hintText.clear();
+            m_statusText = "Question " + std::to_string((int)m_turns.size() + 1)
+                         + " of " + std::to_string(m_cfg.totalQuestions);
+            Render(true);
         });
     }).detach();
 }
@@ -428,10 +337,7 @@ void ExamPanel::RequestNextQuestion() {
 void ExamPanel::SubmitAnswer(const std::string& answer) {
     if (m_busy || m_currentQuestion.empty()) return;
     m_busy = true;
-    m_sendBtn->Disable();
-    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-    m_hintBtn->Disable();
-    m_statusLabel->SetLabel("Scoring…");
+    m_webView->RunScript("if(typeof setBusy==='function')setBusy('Scoring...')");
 
     int         remaining       = m_cfg.totalQuestions - (int)m_turns.size() - 1;
     ExamConfig  examCfg         = m_cfg;
@@ -457,12 +363,12 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
         auto result = InvokeLLM(prompt, llmCfg);
         wxTheApp->CallAfter([this, answer, result, remaining]() {
             m_busy = false;
+            Logger::get().log("ExamPanel::SubmitAnswer callback m_busy=false ok="
+                              + std::to_string(result.ok));
             if (!result.ok) {
-                m_statusLabel->SetLabel("LLM error: " + result.error);
+                m_statusText = "LLM error: " + result.error;
                 Logger::get().log("ExamPanel score error: " + result.error);
-                m_sendBtn->Enable();
-                m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-                m_hintBtn->Enable();
+                Render();
                 return;
             }
 
@@ -472,9 +378,7 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
                 scored.explanation = result.text;
                 scored.parseOk     = true;
             }
-            // App owns the skipped state — the model never picks it
             if (answer.empty()) scored.score = Score::Skipped;
-            // If model omitted EXPLANATION, use the full raw response
             if (scored.explanation.empty()) scored.explanation = result.text;
 
             QuestionTurn turn;
@@ -486,42 +390,32 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
             m_turns.push_back(turn);
             AppendSessionTurn(m_sessionFile, turn);
 
-            m_flagBtn->Enable();
             ++m_questionIndex;
 
             if (!scored.nextQuestion.empty()) {
                 m_currentQuestion = scored.nextQuestion;
-                int qNum = (int)m_turns.size() + 1;
-                m_statusLabel->SetLabel("Question " + std::to_string(qNum)
-                    + " of " + std::to_string(m_cfg.totalQuestions));
-                m_sendBtn->Enable();
-                m_skipBtn->Enable(); m_silentSkipBtn->Enable();
-                m_hintBtn->Enable();
-                m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
-                m_hintCtrl->Clear(); m_hintCtrl->Hide();
-                m_leftPanel->GetSizer()->Layout();
-                m_answerCtrl->Clear();
+                m_hintText.clear();
+                m_statusText = "Question " + std::to_string((int)m_turns.size() + 1)
+                             + " of " + std::to_string(m_cfg.totalQuestions);
             } else {
-                // Session complete — keep lastSessionFile so Exam tab can show
-                // the completed turns read-only on next startup.
                 m_active          = false;
                 m_currentQuestion.clear();
-                m_statusLabel->SetLabel("Session complete! See Review tab for results.");
-                m_sendBtn->Disable();
-                m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-                m_hintBtn->Disable();
-                m_hintCtrl->Clear(); m_hintCtrl->Hide();
-                m_leftPanel->GetSizer()->Layout();
-                m_abandonBtn->Disable();
+                m_hintText.clear();
+                m_statusText = "Session complete! See Review tab for results.";
                 if (m_onComplete) m_onComplete(m_sessionFile);
             }
-            Render(true);  // scroll to bottom to show the scored answer + next question
+            Render(true);
         });
     }).detach();
 }
 
 // ---------------------------------------------------------------------------
 void ExamPanel::Render(bool scrollToBottom) {
+    Logger::get().log("ExamPanel::Render"
+        "  active=" + std::to_string(m_active) +
+        "  busy="   + std::to_string(m_busy) +
+        "  hasQ="   + std::to_string(!m_currentQuestion.empty()) +
+        "  turns="  + std::to_string(m_turns.size()));
     std::string html = BuildExamHTML(scrollToBottom);
     m_webView->SetPage(wxString::FromUTF8(html), "");
 }
@@ -547,11 +441,7 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
         body << RenderExamTurns(m_turns, chatCounts,
                                 m_cfg.moreOfTopics, m_cfg.lessOfTopics);
 
-        if (!m_currentQuestion.empty()) {
-            body << "<div class='current-question'>"
-                 << RenderMarkdown(m_currentQuestion)
-                 << "</div>";
-        }
+        body << BuildCurrentQuestionHTML(m_currentQuestion, m_busy);
         if (!m_active && !m_turns.empty()) {
             body << "<p class='done'>Session complete. Check the Review tab.</p>";
         }
@@ -593,75 +483,151 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
                 "if(b)b.scrollIntoView({behavior:'instant'});"
                 "});});</script>";
 
-    return BuildHTML(extraCSS + overlay + deepdiveBtn + body.str(), "Exam", m_darkMode);
+    ExamInputState inputState;
+    inputState.active          = m_active;
+    inputState.busy            = m_busy;
+    inputState.hasQuestion     = !m_currentQuestion.empty();
+    inputState.readyForNext    = m_active && !m_busy && m_currentQuestion.empty();
+    inputState.canFlag         = !m_turns.empty();
+    inputState.lastTurnFlagged = !m_turns.empty() && m_turns.back().flagged;
+    inputState.hintText        = m_hintText;
+    inputState.statusText      = m_statusText;
+
+    std::string inputSection = BuildExamInputSection(inputState);
+
+    // Wrap scrollable content in flex:1 so the body flex-column pushes
+    // the input section to the viewport bottom without any position:fixed.
+    std::string content = "<div style='flex:1'>"
+                        + overlay + deepdiveBtn + body.str()
+                        + "</div>";
+
+    return BuildHTML(extraCSS + content + inputSection, "Exam", m_darkMode);
 }
 
 // ---------------------------------------------------------------------------
-void ExamPanel::OnSend(wxCommandEvent&) {
-    std::string answer = m_answerCtrl->GetValue().ToStdString();
-    if (answer.empty()) return;
-    SubmitAnswer(answer);
-}
-
-void ExamPanel::OnSkip(wxCommandEvent&) {
-    SubmitAnswer("");
-}
-
-void ExamPanel::OnSilentSkip(wxCommandEvent&) {
-    if (m_busy || m_currentQuestion.empty()) return;
-
-    QuestionTurn turn;
-    turn.question   = m_currentQuestion;
-    turn.score      = Score::Skipped;
-    turn.silentSkip = true;
-    m_turns.push_back(turn);
-    AppendSessionTurn(m_sessionFile, turn);
-
-    m_currentQuestion.clear();
-    m_flagBtn->Enable();
-    ++m_questionIndex;
-
-    if (m_questionIndex < m_cfg.totalQuestions) {
-        RequestNextQuestion();
-    } else {
-        m_active = false;
-        m_sendBtn->Disable();
-        m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-        m_abandonBtn->Disable();
-        m_statusLabel->SetLabel("Session complete! See Review tab for results.");
-        if (m_onComplete) m_onComplete(m_sessionFile);
-        Render(true);
+// JS → C++ bridge: all exam input actions arrive here.
+// ---------------------------------------------------------------------------
+static std::string examJsonField(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\":\"";
+    size_t pos = json.find(needle);
+    if (pos == std::string::npos) return "";
+    pos += needle.size();
+    std::string val;
+    while (pos < json.size()) {
+        char c = json[pos++];
+        if (c == '"') break;
+        if (c == '\\' && pos < json.size()) {
+            char e = json[pos++];
+            switch (e) {
+                case '"':  val += '"';  break;
+                case '\\': val += '\\'; break;
+                case 'n':  val += '\n'; break;
+                case 'r':  val += '\r'; break;
+                case 't':  val += '\t'; break;
+                default:   val += e;   break;
+            }
+        } else val += c;
     }
+    return val;
 }
 
-// ---------------------------------------------------------------------------
-void ExamPanel::OnHint(wxCommandEvent&) {
-    if (m_busy || m_currentQuestion.empty()) return;
+static std::string escapeJS(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if      (c == '\\') out += "\\\\";
+        else if (c == '\'') out += "\\'";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') ;
+        else                out += c;
+    }
+    return out;
+}
 
-    m_hintBtn->SetLabel("⏳ …");
-    m_hintBtn->Disable();
+void ExamPanel::OnExamAction(wxWebViewEvent& evt) {
+    std::string payload = evt.GetString().ToStdString();
+    std::string action  = examJsonField(payload, "action");
+    std::string answer  = examJsonField(payload, "answer");
 
-    std::string question = m_currentQuestion;
-    LLMConfig   llmCfg   = m_llmCfg;
+    if (action == "nextQuestion") {
+        RequestNextQuestion();
 
-    std::thread([=]() {
-        LLMResult result = InvokeLLM(BuildHintPrompt(question), llmCfg);
-        wxTheApp->CallAfter([=]() {
-            std::string hint = result.ok ? result.text : "(could not fetch hint)";
-            // Strip leading/trailing whitespace
-            while (!hint.empty() && (hint.front() == '\n' || hint.front() == ' '))
-                hint.erase(hint.begin());
-            while (!hint.empty() && (hint.back() == '\n' || hint.back() == ' '))
-                hint.pop_back();
+    } else if (action == "submit") {
+        SubmitAnswer(answer);
 
-            m_hintCtrl->SetValue(wxString::FromUTF8("💡 " + hint));
-            m_hintCtrl->Show();
-            m_leftPanel->GetSizer()->Layout();
+    } else if (action == "skip") {
+        SubmitAnswer("");
 
-            m_hintBtn->SetLabel(wxString::FromUTF8("\xf0\x9f\x92\xa1 Hint"));
-            m_hintBtn->Enable();
-        });
-    }).detach();
+    } else if (action == "silentSkip") {
+        if (m_busy || m_currentQuestion.empty()) return;
+
+        QuestionTurn turn;
+        turn.question   = m_currentQuestion;
+        turn.score      = Score::Skipped;
+        turn.silentSkip = true;
+        m_turns.push_back(turn);
+        AppendSessionTurn(m_sessionFile, turn);
+
+        m_currentQuestion.clear();
+        ++m_questionIndex;
+
+        if (m_questionIndex < m_cfg.totalQuestions) {
+            RequestNextQuestion();
+        } else {
+            m_active = false;
+            m_statusText = "Session complete! See Review tab for results.";
+            if (m_onComplete) m_onComplete(m_sessionFile);
+            Render(true);
+        }
+
+    } else if (action == "hint") {
+        if (m_busy || m_currentQuestion.empty()) return;
+        m_webView->RunScript(
+            "document.getElementById('btn-hint').disabled=true;"
+            "document.getElementById('btn-hint').textContent='\xe2\x8f\xb3 ...';" );
+
+        std::string question = m_currentQuestion;
+        LLMConfig   llmCfg   = m_llmCfg;
+
+        std::thread([=]() {
+            LLMResult result = InvokeLLM(BuildHintPrompt(question), llmCfg);
+            wxTheApp->CallAfter([=]() {
+                std::string hint = result.ok ? result.text : "(could not fetch hint)";
+                while (!hint.empty() && (hint.front() == '\n' || hint.front() == ' '))
+                    hint.erase(hint.begin());
+                while (!hint.empty() && (hint.back() == '\n' || hint.back() == ' '))
+                    hint.pop_back();
+
+                m_hintText = hint;
+                m_webView->RunScript(
+                    "document.getElementById('btn-hint').disabled=false;"
+                    "document.getElementById('btn-hint').textContent='\xf0\x9f\x92\xa1 Hint';"
+                    "showHint('" + escapeJS(ProcessInline(hint)) + "');" );
+            });
+        }).detach();
+
+    } else if (action == "flag") {
+        if (m_turns.empty()) return;
+        int idx = (int)m_turns.size() - 1;
+        m_turns[idx].flagged = !m_turns[idx].flagged;
+        SetTurnFlagged(m_sessionFile, idx, m_turns[idx].flagged);
+        Render();
+
+    } else if (action == "abandon") {
+        int ans = wxMessageBox(
+            "End this session now?\n\nProgress so far will be saved to the Review tab.",
+            "End Session", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, this);
+        if (ans != wxYES) return;
+        AbandonSession();
+
+    } else if (action == "focusInput") {
+        if (m_splitter->IsSplit()) {
+            m_splitter->Unsplit(m_chatPanel);
+            m_chatOpen = false;
+            m_webView->RunScript(
+                "var o=document.getElementById('chat-overlay');"
+                "if(o)o.classList.remove('active');");
+        }
+    }
 }
 
 static std::string QuestionSnippet(const std::string& q) {
@@ -687,14 +653,6 @@ static std::string JoinPipeVec(const std::vector<std::string>& v) {
     return s;
 }
 
-void ExamPanel::OnAbandon(wxCommandEvent&) {
-    int ans = wxMessageBox(
-        "End this session now?\n\nProgress so far will be saved to the Review tab.",
-        "End Session", wxYES_NO | wxNO_DEFAULT | wxICON_QUESTION, this);
-    if (ans != wxYES) return;
-    AbandonSession();
-}
-
 void ExamPanel::Clear() {
     m_active          = false;
     m_busy            = false;
@@ -703,12 +661,8 @@ void ExamPanel::Clear() {
     m_currentQuestion.clear();
     m_sessionFile.clear();
     m_projectDir.clear();
-
-    m_sendBtn->Disable();
-    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-    m_flagBtn->Disable();
-    m_abandonBtn->Disable();
-    m_statusLabel->SetLabel("");
+    m_hintText.clear();
+    m_statusText.clear();
 
     m_chatOpen = false;
     m_chatPanel->Reset();
@@ -721,11 +675,8 @@ void ExamPanel::AbandonSession() {
     m_active          = false;
     m_busy            = false;
     m_currentQuestion.clear();
-
-    m_sendBtn->Disable();
-    m_skipBtn->Disable(); m_silentSkipBtn->Disable();
-    m_abandonBtn->Disable();
-    m_statusLabel->SetLabel("Session ended. See Review tab for results.");
+    m_hintText.clear();
+    m_statusText      = "Session ended. See Review tab for results.";
 
     if (!m_projectDir.empty()) {
         ProjectConfig pcfg = LoadConfig(m_projectDir);
@@ -736,15 +687,6 @@ void ExamPanel::AbandonSession() {
     if (m_onComplete) m_onComplete(m_sessionFile);
     Render();
     Logger::get().log("Session abandoned: " + m_sessionFile);
-}
-
-void ExamPanel::OnFlag(wxCommandEvent&) {
-    if (m_turns.empty()) return;
-    int idx = (int)m_turns.size() - 1;
-    m_turns[idx].flagged = !m_turns[idx].flagged;
-    SetTurnFlagged(m_sessionFile, idx, m_turns[idx].flagged);
-    m_flagBtn->SetLabel(m_turns[idx].flagged ? "Unflag" : "Flag for review");
-    Render();
 }
 
 void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
@@ -761,9 +703,6 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         Logger::get().log("Turn " + std::to_string(idx)
                           + " flagged=" + std::to_string(m_turns[idx].flagged));
 
-        if (idx == (long)m_turns.size() - 1)
-            m_flagBtn->SetLabel(m_turns[idx].flagged ? "Unflag" : "Flag for review");
-
         Render();
         return;
     }
@@ -778,7 +717,7 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
 
         if (!m_splitter->IsSplit()) {
             int w = m_splitter->GetClientSize().GetWidth();
-            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+            m_splitter->SplitVertically(m_webView, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
         m_webView->RunScript(
@@ -809,7 +748,7 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         m_chatPanel->OpenTurn(turn, (int)idx, m_sessionFile, m_llmCfg, starter, def->displayQ);
         if (!m_splitter->IsSplit()) {
             int w = m_splitter->GetClientSize().GetWidth();
-            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+            m_splitter->SplitVertically(m_webView, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
         m_webView->RunScript(
@@ -835,7 +774,7 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
 
         if (!m_splitter->IsSplit()) {
             int w = m_splitter->GetClientSize().GetWidth();
-            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+            m_splitter->SplitVertically(m_webView, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
         m_webView->RunScript(
@@ -934,7 +873,7 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         m_chatPanel->OpenTurn(grp.turns[i], (int)i, grp.sessionFile, m_llmCfg);
         if (!m_splitter->IsSplit()) {
             int w = m_splitter->GetClientSize().GetWidth();
-            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+            m_splitter->SplitVertically(m_webView, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
         m_webView->RunScript(
@@ -964,7 +903,7 @@ void ExamPanel::OnWebViewNav(wxWebViewEvent& evt) {
         m_chatPanel->OpenTurn(turn, (int)i, grp.sessionFile, m_llmCfg, starter, def->displayQ);
         if (!m_splitter->IsSplit()) {
             int w = m_splitter->GetClientSize().GetWidth();
-            m_splitter->SplitVertically(m_leftPanel, m_chatPanel, w * 6 / 10);
+            m_splitter->SplitVertically(m_webView, m_chatPanel, w * 6 / 10);
         }
         m_chatOpen = true;
         m_webView->RunScript(
