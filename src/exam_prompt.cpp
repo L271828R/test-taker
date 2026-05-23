@@ -473,26 +473,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn.active .learn-btn, .turn.active .more-btn, .turn.active .less-btn,
 .turn.active .whynot-btn { opacity:1; }
 .turn.active { background:var(--surface); }
-.game-drop { position:relative; display:inline-block; }
-.game-drop:hover .game-menu,
-.game-drop:focus-within .game-menu { display:block; }
-.game-menu { display:none; position:absolute; top:100%; left:0;
-             min-width:130px; background:var(--surface);
-             border:1px solid var(--border); border-radius:4px;
-             box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:999; padding:2px 0; }
-.game-menu a { display:block; padding:5px 11px; color:var(--text);
-               text-decoration:none; font-size:.82em; white-space:nowrap; }
-.game-menu a:hover { background:var(--surface-hover,rgba(0,0,0,.06)); }
-.game-menu .sub-wrap { position:relative; }
-.game-menu .sub-label { display:block; padding:5px 11px; font-size:.82em;
-                        color:var(--text); white-space:nowrap; cursor:default; }
-.game-menu .sub-label::after { content:' \25BA'; font-size:0.75em; }
-.game-menu .sub-wrap:hover .sub-menu,
-.game-menu .sub-wrap:focus-within .sub-menu { display:block; }
-.game-menu .sub-menu { display:none; position:absolute; left:100%; top:-2px;
-                       min-width:160px; background:var(--surface);
-                       border:1px solid var(--border); border-radius:4px;
-                       box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:1000; padding:2px 0; }
+)" + PersonalityDropdownCSS("game-drop", "explain-btn", "game-menu") + R"(
 .learn-btn.saving { color:#9a6700; border-color:#9a6700; opacity:1; }
 .learn-btn.done   { color:#1a7f37; border-color:#1a7f37; opacity:1; }
 .flag-btn.flagged { color:#e3a000; border-color:#e3a000; opacity:1; }
@@ -1097,6 +1078,69 @@ std::string RenderPersonalityDropdowns(const std::string& urlPrefix,
     return out.str();
 }
 
+// ---------------------------------------------------------------------------
+std::string PersonalityDropdownCSS(const std::string& wrapperClass,
+                                    const std::string& btnClass,
+                                    const std::string& menuClass,
+                                    const std::string& hoverSelector) {
+    const std::string w = "." + wrapperClass;
+    const std::string b = "." + btnClass;
+    const std::string m = "." + menuClass;
+
+    std::string css;
+    css += w + "{position:relative;display:inline-block;";
+    if (!hoverSelector.empty()) css += "opacity:0;transition:opacity 0.15s;";
+    css += "}\n";
+    if (!hoverSelector.empty()) {
+        css += hoverSelector + ":hover " + w + "{opacity:1;}\n";
+        css += hoverSelector + " " + w + ".open{opacity:1;}\n";
+    }
+    css += b + "{background:none;border:1px solid var(--border);border-radius:4px;"
+           "padding:0.15em 0.5em;font-size:0.82em;cursor:pointer;"
+           "color:var(--text-muted);white-space:nowrap;}\n";
+    css += w + ".open " + m + "{display:block;}\n";
+    css += m + "{display:none;position:absolute;top:100%;left:0;"
+           "min-width:160px;background:var(--surface);"
+           "border:1px solid var(--border);border-radius:4px;"
+           "box-shadow:0 4px 12px rgba(0,0,0,.18);z-index:999;padding:2px 0;}\n";
+    css += m + " a{display:block;padding:5px 11px;color:var(--text);"
+           "text-decoration:none;font-size:.82em;white-space:nowrap;}\n";
+    css += m + " a:hover{background:var(--surface-hover,rgba(0,0,0,.06));}\n";
+    css += m + " .sub-wrap{position:relative;}\n";
+    css += m + " .sub-label{display:block;padding:5px 11px;font-size:.82em;"
+           "color:var(--text);white-space:nowrap;cursor:default;}\n";
+    css += m + " .sub-label::after{content:' \\25BA';font-size:0.75em;}\n";
+    css += m + " .sub-wrap:hover .sub-menu,"
+        +  m + " .sub-wrap:focus-within .sub-menu{display:block;}\n";
+    css += m + " .sub-menu{display:none;position:absolute;left:100%;top:-2px;"
+           "min-width:180px;background:var(--surface);"
+           "border:1px solid var(--border);border-radius:4px;"
+           "box-shadow:0 4px 12px rgba(0,0,0,.18);z-index:1000;padding:2px 0;}\n";
+    return css;
+}
+
+// ---------------------------------------------------------------------------
+std::string PersonalityDropdownJS(const std::string& wrapperClass,
+                                   const std::string& btnClass) {
+    const std::string w = "." + wrapperClass;
+    const std::string b = "." + btnClass;
+
+    return "<script>(function(){"
+           "function toggleDrop(d){"
+           "var open=d.classList.contains('open');"
+           "document.querySelectorAll('" + w + ".open').forEach(function(x){x.classList.remove('open');});"
+           "if(!open)d.classList.add('open');}"
+           "document.querySelectorAll('" + w + "').forEach(function(d){"
+           "var btn=d.querySelector('" + b + "');"
+           "if(btn&&!btn._dpBound){btn._dpBound=true;"
+           "btn.onclick=function(e){e.stopPropagation();toggleDrop(d);};}});"
+           "document.addEventListener('click',function(e){"
+           "if(!e.target.closest('" + w + "'))"
+           "document.querySelectorAll('" + w + ".open').forEach(function(d){d.classList.remove('open');});});"
+           "})();</script>\n";
+}
+
+// ---------------------------------------------------------------------------
 std::string BuildGameHintPrompt(const std::string& question,
                                 const std::string& choiceA,
                                 const std::string& choiceB) {

@@ -166,6 +166,21 @@ std::string RenderPersonalityDropdowns(const std::string& urlPrefix,
                                         const std::string& btnClass     = "explain-btn",
                                         const std::string& menuClass    = "game-menu");
 
+// Generate CSS for a personality dropdown widget.
+// hoverSelector: if non-empty, the wrapper starts hidden (opacity:0) and fades in when
+//                this parent selector is hovered (e.g. ".chat-turn", ".saved-entry").
+//                Pass "" for always-visible buttons.
+std::string PersonalityDropdownCSS(const std::string& wrapperClass,
+                                    const std::string& btnClass,
+                                    const std::string& menuClass,
+                                    const std::string& hoverSelector = "");
+
+// Generate page-level JS click-toggle for personality dropdowns.
+// Attaches onclick to every .{btnClass} inside .{wrapperClass}; toggles .open on the wrapper.
+// Closes all open wrappers on outside click.
+std::string PersonalityDropdownJS(const std::string& wrapperClass,
+                                   const std::string& btnClass);
+
 // Render past-session groups as interactive history above the active session.
 // Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
 // Includes a clear-history link.

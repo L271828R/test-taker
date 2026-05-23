@@ -463,7 +463,8 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
                 text-decoration:none; }
 #deepdive-btn:hover { opacity:.85; }
 </style>
-)";
+)"
+        + PersonalityDropdownJS("game-drop", "explain-btn");
 
     // Overlay is always in the DOM so RunScript can toggle it without a full reload.
     std::string activeClass = m_chatOpen ? " class='active'" : "";

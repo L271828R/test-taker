@@ -1276,5 +1276,102 @@ int test_exam_prompt() {
         }
     }
 
+    // ── PersonalityDropdownCSS ───────────────────────────────────────────────
+
+    // Wrapper class gets position:relative.
+    {
+        std::string css = PersonalityDropdownCSS("my-drop", "my-btn", "my-menu");
+        bool hasPos = css.find(".my-drop") != std::string::npos
+                   && css.find("position:relative") != std::string::npos;
+        if (!hasPos) {
+            std::cerr << "FAIL [pd-css-wrapper-style]: wrapper class not styled\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-css-wrapper-style]\n";
+        }
+    }
+
+    // Open class shows the menu (JS-toggle, not :hover).
+    {
+        std::string css = PersonalityDropdownCSS("my-drop", "my-btn", "my-menu");
+        bool hasOpen  = css.find(".my-drop.open .my-menu") != std::string::npos
+                     || css.find(".my-drop.open>.my-menu") != std::string::npos;
+        bool noHoverOnly = !(css.find(".my-drop:hover .my-menu") != std::string::npos
+                           && !hasOpen);
+        if (!hasOpen || !noHoverOnly) {
+            std::cerr << "FAIL [pd-css-open-shows-menu]: must use .open class not :hover\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-css-open-shows-menu]\n";
+        }
+    }
+
+    // When hoverSelector provided, wrapper starts hidden and fades in on hover.
+    {
+        std::string css = PersonalityDropdownCSS("my-drop", "my-btn", "my-menu", ".my-parent");
+        bool hasOpacity = css.find("opacity:0") != std::string::npos;
+        bool hasHover   = css.find(".my-parent") != std::string::npos
+                       && css.find("opacity:1") != std::string::npos;
+        if (!hasOpacity || !hasHover) {
+            std::cerr << "FAIL [pd-css-hover-selector]: opacity/hover CSS missing\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-css-hover-selector]\n";
+        }
+    }
+
+    // Sub-menu styles are present.
+    {
+        std::string css = PersonalityDropdownCSS("my-drop", "my-btn", "my-menu");
+        bool hasSub = css.find("sub-menu") != std::string::npos
+                   && css.find("sub-label") != std::string::npos;
+        if (!hasSub) {
+            std::cerr << "FAIL [pd-css-sub-menu]: sub-menu styles missing\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-css-sub-menu]\n";
+        }
+    }
+
+    // ── PersonalityDropdownJS ────────────────────────────────────────────────
+
+    // JS must contain a function that toggles the open class.
+    {
+        std::string js = PersonalityDropdownJS("my-drop", "my-btn");
+        bool hasToggle = js.find("toggleDrop") != std::string::npos
+                      || js.find(".open") != std::string::npos;
+        if (!hasToggle) {
+            std::cerr << "FAIL [pd-js-has-toggle-func]: JS must have toggle logic\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-js-has-toggle-func]\n";
+        }
+    }
+
+    // JS must close dropdowns on outside click.
+    {
+        std::string js = PersonalityDropdownJS("my-drop", "my-btn");
+        bool hasClose = js.find("addEventListener") != std::string::npos
+                     && js.find("click") != std::string::npos;
+        if (!hasClose) {
+            std::cerr << "FAIL [pd-js-close-outside]: JS must have click listener\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-js-close-outside]\n";
+        }
+    }
+
+    // JS is parameterized — uses the given class name, not a hardcoded one.
+    {
+        std::string js = PersonalityDropdownJS("xyzzy-wrap", "xyzzy-trigger");
+        bool hasClass = js.find("xyzzy-wrap") != std::string::npos;
+        if (!hasClass) {
+            std::cerr << "FAIL [pd-js-parameterized]: JS must use given class name\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [pd-js-parameterized]\n";
+        }
+    }
+
     return failures;
 }

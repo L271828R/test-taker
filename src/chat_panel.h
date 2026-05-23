@@ -32,19 +32,16 @@ private:
     std::vector<ConversationTurn> m_turns;
     std::set<int>            m_savedIndices;  // tracks which turns saved this session
 
-    wxWebView*  m_webView   = nullptr;
-    wxTextCtrl* m_inputCtrl = nullptr;
-    wxButton*   m_sendBtn   = nullptr;
-    wxButton*   m_clearBtn  = nullptr;
+    wxWebView* m_webView = nullptr;
 
     void LoadHistory();
     void Render(const std::string& pendingQuestion = "");
     std::string BuildChatHTML(const std::string& pendingQ = "") const;
 
+    void SendMessage(const std::string& text);
     void FireAsNewTurn(const std::string& displayQuestion, const std::string& prompt);
 
-    void OnSend(wxCommandEvent&);
-    void OnClearChat(wxCommandEvent&);
+    void OnChatAction(wxWebViewEvent&);
     void OnWebViewNav(wxWebViewEvent&);
 
     wxDECLARE_EVENT_TABLE();

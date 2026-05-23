@@ -124,6 +124,7 @@ set(SOURCES
     src/exam_meta.cpp
     src/exam_prompt.cpp
     src/turn_chat.cpp
+    src/chat_html.cpp
     src/inspector.mm
     src/corpus.cpp
     src/embeddings.cpp
@@ -170,6 +171,7 @@ add_executable(test_test-taker
     tests/test_git_import.cpp
     tests/test_saved_convos.cpp
     tests/test_game_data.cpp
+    tests/test_chat_panel.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -187,6 +189,7 @@ add_executable(test_test-taker
     src/exam_meta.cpp
     src/exam_prompt.cpp
     src/turn_chat.cpp
+    src/chat_html.cpp
     src/corpus.cpp
     src/embeddings.cpp
     src/web_fetch.cpp

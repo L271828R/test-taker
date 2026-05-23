@@ -1,4 +1,5 @@
 #include "chat_panel.h"
+#include "chat_html.h"
 #include "conversation.h"
 #include "corpus.h"
 #include "exam_prompt.h"
@@ -12,15 +13,12 @@
 #include <fstream>
 #include <thread>
 #include <filesystem>
+#include <wx/app.h>
 #include <wx/sizer.h>
 
 namespace fs = std::filesystem;
 
-enum { ID_CP_SEND = wxID_HIGHEST + 600, ID_CP_CLEAR };
-
 wxBEGIN_EVENT_TABLE(ChatPanel, wxPanel)
-    EVT_BUTTON(ID_CP_SEND,  ChatPanel::OnSend)
-    EVT_BUTTON(ID_CP_CLEAR, ChatPanel::OnClearChat)
     EVT_WEBVIEW_NAVIGATING(wxID_ANY, ChatPanel::OnWebViewNav)
 wxEND_EVENT_TABLE()
 
@@ -31,31 +29,15 @@ ChatPanel::ChatPanel(wxWindow* parent, bool darkMode, SavedConvoCallback onSaved
     auto* outer = new wxBoxSizer(wxVERTICAL);
 
     m_webView = wxWebView::New(this, wxID_ANY, "about:blank");
-    outer->Add(m_webView, 1, wxEXPAND);
-
-    auto* inputRow = new wxBoxSizer(wxHORIZONTAL);
-    m_inputCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-        wxDefaultPosition, wxSize(-1, 70),
-        wxTE_MULTILINE);
-    m_sendBtn  = new wxButton(this, ID_CP_SEND,  "Send (Ctrl+Enter)");
-    m_clearBtn = new wxButton(this, ID_CP_CLEAR, "Clear Chat");
-
-    m_inputCtrl->Bind(wxEVT_KEY_DOWN, [this](wxKeyEvent& e) {
-        if (e.GetKeyCode() == WXK_RETURN && e.ControlDown()) {
-            wxCommandEvent dummy(wxEVT_BUTTON, ID_CP_SEND);
-            OnSend(dummy);
-        } else {
-            e.Skip();
-        }
+    m_webView->SetPage(
+        "<html><head><script>function chatAction(a,t){}</script></head><body></body></html>", "");
+    wxTheApp->CallAfter([this]() {
+        if (m_webView) m_webView->AddScriptMessageHandler("chatAction");
     });
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+                    &ChatPanel::OnChatAction, this);
 
-    auto* btnCol = new wxBoxSizer(wxVERTICAL);
-    btnCol->Add(m_sendBtn,  0, wxEXPAND | wxBOTTOM, 4);
-    btnCol->Add(m_clearBtn, 0, wxEXPAND);
-
-    inputRow->Add(m_inputCtrl, 1, wxEXPAND | wxALL, 6);
-    inputRow->Add(btnCol, 0, wxALIGN_BOTTOM | wxALL, 6);
-    outer->Add(inputRow, 0, wxEXPAND);
+    outer->Add(m_webView, 1, wxEXPAND);
     SetSizer(outer);
 
     Render();
@@ -122,22 +104,9 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
 
     std::string body;
     for (int i = 0; i < (int)m_turns.size(); ++i) {
-        const auto& t = m_turns[i];
-        bool isSaved = m_savedIndices.count(i) > 0;
-        std::string saveClass = isSaved ? " saved" : "";
-        std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
-        std::string si = std::to_string(i);
-        body += "<div class='chat-turn'>"
-                "<div class='chat-toolbar'>"
-                "<a class='chat-save-btn" + saveClass + "' href='testtaker://chat-save/" + si + "'>" + saveLabel + "</a>"
-                + RenderPersonalityDropdowns(
-                    "testtaker://chat-explain/", "/" + si,
-                    "chat-explain-drop", "chat-explain-btn", "chat-explain-menu")
-                + "<a class='chat-floater-btn' href='testtaker://chat-learnmore/" + si + "' title='Deep dive: learn more'>&#x1F4D6; learn&nbsp;more</a>"
-                "</div>"
-                "<div class='chat-q'>" + EscapeHTML(t.question) + "</div>"
-                "<div class='chat-a'>" + RenderMarkdown(t.answer) + "</div>"
-                "</div>\n";
+        body += BuildChatTurnHTML(m_turns[i], i, m_darkMode,
+                                  m_savedIndices.count(i) > 0,
+                                  m_personalities);
     }
     if (!pendingQ.empty()) {
         body += "<div class='chat-turn'>"
@@ -145,73 +114,106 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
                 "<div class='chat-a thinking'>&#x22EF;</div>"
                 "</div>\n";
     }
-    if (body.empty()) {
-        if (m_chatFile.empty())
-            body = "<p class='empty'>Activate a project to start chatting.</p>";
-        else
-            body = "<p class='empty'>Ask anything about your study topic.</p>";
+    if (m_turns.empty() && pendingQ.empty()) {
+        body += m_chatFile.empty()
+            ? "<p class='empty'>Activate a project to start chatting.</p>"
+            : "<p class='empty'>Ask anything about your study topic.</p>";
     }
 
-    body += "<script>window.scrollTo(0,document.body.scrollHeight);</script>";
+    body += "<div id='chat-bottom'></div>"
+            "<script>requestAnimationFrame(function(){"
+            "var b=document.getElementById('chat-bottom');"
+            "if(b)b.scrollIntoView({behavior:'instant'});});</script>";
 
-    const std::string extraCSS = R"(<style>
-.chat-turn { margin-bottom:18px; }
-.chat-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; }
-.chat-turn:hover .chat-save-btn,
-.chat-turn:hover .chat-floater-btn { opacity:1; }
-.chat-save-btn, .chat-floater-btn {
-  opacity:0; transition:opacity 0.15s;
-  background:none; border:1px solid var(--border); border-radius:4px;
-  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
-  color:var(--text-muted); text-decoration:none; white-space:nowrap; }
-.chat-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
-.chat-floater-btn:hover { border-color:#9a6700; color:#9a6700; }
-.chat-explain-drop { position:relative; display:inline-block; opacity:0; transition:opacity 0.15s; }
-.chat-turn:hover .chat-explain-drop { opacity:1; }
-.chat-explain-btn { background:none; border:1px solid var(--border); border-radius:4px;
-  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
-  color:var(--text-muted); white-space:nowrap; }
-.chat-explain-drop:hover .chat-explain-menu,
-.chat-explain-drop:focus-within .chat-explain-menu { display:block; }
-.chat-explain-menu { display:none; position:absolute; top:100%; left:0;
-  min-width:160px; background:var(--surface);
-  border:1px solid var(--border); border-radius:4px;
-  box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:999; padding:2px 0; }
-.chat-explain-menu a { display:block; padding:5px 11px; color:var(--text);
-  text-decoration:none; font-size:.82em; white-space:nowrap; }
-.chat-explain-menu a:hover { background:var(--surface-hover,rgba(0,0,0,.06)); }
-.chat-explain-menu .sub-wrap { position:relative; }
-.chat-explain-menu .sub-label { display:block; padding:5px 11px; font-size:.82em;
-  color:var(--text); white-space:nowrap; cursor:default; }
-.chat-explain-menu .sub-label::after { content:' \25BA'; font-size:0.75em; }
-.chat-explain-menu .sub-wrap:hover .sub-menu,
-.chat-explain-menu .sub-wrap:focus-within .sub-menu { display:block; }
-.chat-explain-menu .sub-menu { display:none; position:absolute; left:100%; top:-2px;
-  min-width:180px; background:var(--surface);
-  border:1px solid var(--border); border-radius:4px;
-  box-shadow:0 4px 12px rgba(0,0,0,.18); z-index:1000; padding:2px 0; }
-.chat-q { background:)" + qBg + R"(; border-radius:8px 8px 8px 2px;
-  padding:10px 14px; margin-bottom:6px; font-weight:500; }
-.chat-a { background:)" + aBg + R"(; border-radius:2px 8px 8px 8px;
-  padding:10px 14px; }
-.chat-a pre { margin:8px 0; }
-.thinking { color:var(--text-muted); font-style:italic; }
-.empty    { color:var(--text-muted); font-style:italic; }
-</style>)";
+    const std::string dropCSS =
+        PersonalityDropdownCSS("chat-explain-drop", "chat-explain-btn",
+                               "chat-explain-menu", ".chat-turn");
+    const std::string extraCSS = "<style>\n"
+        ".chat-turn { margin-bottom:18px; }\n"
+        ".chat-toolbar { display:flex; gap:0.4em; margin-bottom:0.3em; flex-wrap:wrap; }\n"
+        ".chat-turn:hover .chat-save-btn,"
+        ".chat-turn:hover .chat-floater-btn { opacity:1; }\n"
+        ".chat-save-btn, .chat-floater-btn {\n"
+        "  opacity:0; transition:opacity 0.15s;\n"
+        "  background:none; border:1px solid var(--border); border-radius:4px;\n"
+        "  padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;\n"
+        "  color:var(--text-muted); text-decoration:none; white-space:nowrap; }\n"
+        ".chat-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }\n"
+        ".chat-floater-btn:hover { border-color:#9a6700; color:#9a6700; }\n"
+        + dropCSS
+        + ".chat-q { background:" + qBg + "; border-radius:8px 8px 8px 2px;\n"
+          "  padding:10px 14px; margin-bottom:6px; font-weight:500; }\n"
+          ".chat-a { background:" + aBg + "; border-radius:2px 8px 8px 8px;\n"
+          "  padding:10px 14px; }\n"
+          ".chat-a pre { margin:8px 0; }\n"
+          ".thinking { color:var(--text-muted); font-style:italic; }\n"
+          ".empty    { color:var(--text-muted); font-style:italic; }\n"
+          "</style>";
 
-    return BuildHTML(extraCSS + body, "Chat", m_darkMode);
+    const std::string dropToggleJS =
+        PersonalityDropdownJS("chat-explain-drop", "chat-explain-btn");
+
+    ChatInputState inputState;
+    inputState.busy       = m_busy;
+    inputState.hasProject = !m_chatFile.empty();
+    std::string inputSection = BuildChatInputHTML(inputState);
+
+    std::string content = "<div style='flex:1'>" + body + "</div>";
+    return BuildHTML(extraCSS + dropToggleJS + content + inputSection, "Chat", m_darkMode);
 }
 
 // ---------------------------------------------------------------------------
-void ChatPanel::OnSend(wxCommandEvent&) {
-    if (m_busy || m_chatFile.empty()) return;
-    wxString raw = m_inputCtrl->GetValue().Trim();
-    if (raw.empty()) return;
+static std::string chatJsonField(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\":\"";
+    size_t pos = json.find(needle);
+    if (pos == std::string::npos) return "";
+    pos += needle.size();
+    std::string val;
+    while (pos < json.size()) {
+        char c = json[pos++];
+        if (c == '"') break;
+        if (c == '\\' && pos < json.size()) {
+            char e = json[pos++];
+            switch (e) {
+                case '"':  val += '"';  break;
+                case '\\': val += '\\'; break;
+                case 'n':  val += '\n'; break;
+                case 'r':  val += '\r'; break;
+                case 't':  val += '\t'; break;
+                default:   val += e;   break;
+            }
+        } else val += c;
+    }
+    return val;
+}
 
-    std::string question = raw.ToStdString();
-    m_inputCtrl->Clear();
+void ChatPanel::OnChatAction(wxWebViewEvent& evt) {
+    std::string payload = evt.GetString().ToStdString();
+    std::string action  = chatJsonField(payload, "action");
+    std::string text    = chatJsonField(payload, "text");
+
+    if (action == "send") {
+        if (text.empty()) return;
+        SendMessage(text);
+    } else if (action == "clear") {
+        if (m_chatFile.empty()) return;
+        int ans = wxMessageBox("Clear all chat history for this project?",
+                               "Clear Chat", wxYES_NO | wxICON_WARNING);
+        if (ans != wxYES) return;
+        std::ofstream f(m_chatFile, std::ios::trunc);
+        f << "# Chat\n\n<!-- ch:0 -->\n## Conversation\n";
+        m_turns.clear();
+        m_savedIndices.clear();
+        Logger::get().log("Chat history cleared");
+        Render();
+    }
+}
+
+void ChatPanel::SendMessage(const std::string& question) {
+    if (m_busy || m_chatFile.empty()) return;
+    if (question.empty()) return;
+
     m_busy = true;
-    m_sendBtn->Enable(false);
     Render(question);
 
     std::string projectDir = fs::path(m_chatFile).parent_path().string();
@@ -240,8 +242,6 @@ void ChatPanel::OnSend(wxCommandEvent&) {
         auto res = InvokeLLM(prompt, cfg);
         wxTheApp->CallAfter([this, res, chatFile, question]() {
             m_busy = false;
-            m_sendBtn->Enable(true);
-
             std::string answer = res.ok ? res.text : ("Error: " + res.error);
             while (!answer.empty() && (answer.front() == ' ' || answer.front() == '\n'))
                 answer.erase(answer.begin());
@@ -257,27 +257,10 @@ void ChatPanel::OnSend(wxCommandEvent&) {
 }
 
 // ---------------------------------------------------------------------------
-void ChatPanel::OnClearChat(wxCommandEvent&) {
-    if (m_chatFile.empty()) return;
-    int answer = wxMessageBox("Clear all chat history for this project?",
-                              "Clear Chat", wxYES_NO | wxICON_WARNING);
-    if (answer != wxYES) return;
-
-    // Truncate chat.md to just the header
-    std::ofstream f(m_chatFile, std::ios::trunc);
-    f << "# Chat\n\n<!-- ch:0 -->\n## Conversation\n";
-    m_turns.clear();
-    m_savedIndices.clear();
-    Logger::get().log("Chat history cleared");
-    Render();
-}
-
-// ---------------------------------------------------------------------------
 void ChatPanel::FireAsNewTurn(const std::string& displayQuestion,
                                const std::string& prompt) {
     if (m_busy || m_chatFile.empty()) return;
     m_busy = true;
-    m_sendBtn->Enable(false);
     Render(displayQuestion);
 
     LLMConfig   cfg      = m_llmCfg;
@@ -287,7 +270,6 @@ void ChatPanel::FireAsNewTurn(const std::string& displayQuestion,
         auto res = InvokeLLM(prompt, cfg);
         wxTheApp->CallAfter([this, res, chatFile, displayQuestion]() {
             m_busy = false;
-            m_sendBtn->Enable(true);
 
             std::string answer = res.ok ? res.text : ("Error: " + res.error);
             while (!answer.empty() && (answer.front() == ' ' || answer.front() == '\n'))
