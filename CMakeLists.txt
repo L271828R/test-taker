@@ -133,8 +133,8 @@ set(SOURCES
     src/git_import.cpp
     src/rag_logger.cpp
     src/focus_list_panel.cpp
-    src/personality_panel.cpp
     src/personality_lib.cpp
+    src/new_session_html.cpp
     src/saved_convos.cpp
     src/saved_panel.cpp
     src/game_data.cpp
@@ -172,6 +172,7 @@ add_executable(test_test-taker
     tests/test_saved_convos.cpp
     tests/test_game_data.cpp
     tests/test_chat_panel.cpp
+    tests/test_new_session_html.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
@@ -197,6 +198,7 @@ add_executable(test_test-taker
     src/rag_logger.cpp
     src/saved_convos.cpp
     src/personality_lib.cpp
+    src/new_session_html.cpp
     src/game_data.cpp
 )
 add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)

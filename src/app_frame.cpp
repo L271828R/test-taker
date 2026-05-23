@@ -73,7 +73,7 @@ AppFrame::AppFrame()
         [this](const std::string& dir){ OnProjectActivated(dir); });
 
     // New Session tab
-    m_newSessionPage = new NewSessionPanel(m_notebook,
+    m_newSessionPage = new NewSessionPanel(m_notebook, m_darkMode,
         [this](const std::string& projDir, const std::string& sessionFile,
                const ExamConfig& cfg, const LLMConfig& llmCfg){
             OnSessionStarted(projDir, sessionFile, cfg, llmCfg);
@@ -223,6 +223,7 @@ void AppFrame::OnThemeLight(wxCommandEvent&) {
     if (!m_darkMode) return;
     m_darkMode = false;
     wxConfig("TestTaker").Write("darkMode", false);
+    m_newSessionPage->SetDarkMode(false);
     m_examPage->SetDarkMode(false);
     m_chatPage->SetDarkMode(false);
     m_savedPage->SetDarkMode(false);
@@ -232,6 +233,7 @@ void AppFrame::OnThemeDark(wxCommandEvent&) {
     if (m_darkMode) return;
     m_darkMode = true;
     wxConfig("TestTaker").Write("darkMode", true);
+    m_newSessionPage->SetDarkMode(true);
     m_examPage->SetDarkMode(true);
     m_chatPage->SetDarkMode(true);
     m_savedPage->SetDarkMode(true);

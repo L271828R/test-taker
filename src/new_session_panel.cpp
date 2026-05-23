@@ -1,34 +1,63 @@
 #include "new_session_panel.h"
-#include "focus_list_panel.h"
 #include "config.h"
 #include "exam_meta.h"
 #include "meta.h"
 #include "llm_response.h"
 #include "logger.h"
+#include "personality_lib.h"
 #include "project.h"
 #include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <wx/button.h>
-#include <wx/choice.h>
-#include <wx/combobox.h>
 #include <wx/config.h>
 #include <wx/msgdlg.h>
+#include <wx/tokenzr.h>
 #include <wx/sizer.h>
-#include <wx/spinctrl.h>
-#include <wx/statline.h>
-#include <wx/stattext.h>
-#include <wx/textctrl.h>
-#include <wx/textdlg.h>
 
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Personality persistence helpers
-// Pipe-separated names, e.g. "Albert Einstein|Bill Gates"
+// Small JSON field extractor (matches pattern used in other panels)
 // ---------------------------------------------------------------------------
+static std::string nsJsonField(const std::string& json, const std::string& key) {
+    // Handles both numeric and string values: "key":"value" or "key":123
+    std::string kq = "\"" + key + "\":";
+    auto pos = json.find(kq);
+    if (pos == std::string::npos) return "";
+    pos += kq.size();
+    if (pos >= json.size()) return "";
+
+    if (json[pos] == '"') {
+        // String value
+        ++pos;
+        std::string val;
+        while (pos < json.size() && json[pos] != '"') {
+            if (json[pos] == '\\' && pos + 1 < json.size()) {
+                ++pos;
+                switch (json[pos]) {
+                    case 'n': val += '\n'; break;
+                    case 't': val += '\t'; break;
+                    case '"': val += '"'; break;
+                    case '\\': val += '\\'; break;
+                    default: val += json[pos]; break;
+                }
+            } else {
+                val += json[pos];
+            }
+            ++pos;
+        }
+        return val;
+    } else {
+        // Numeric/boolean value — read until delimiter
+        size_t end = json.find_first_of(",}", pos);
+        if (end == std::string::npos) end = json.size();
+        return json.substr(pos, end - pos);
+    }
+}
+
+// Pipe-join / split helpers
 static std::string JoinPipe(const std::vector<std::string>& v) {
     std::string out;
     for (const auto& s : v) {
@@ -49,62 +78,9 @@ static std::vector<std::string> SplitPipe(const std::string& s) {
 }
 
 // ---------------------------------------------------------------------------
-// Focus-area list persistence helpers
-// Format: "stars@@text|stars@@text|..."
+// Fetch Ollama model list from localhost
 // ---------------------------------------------------------------------------
-static std::string SerializeFocusAreas(const std::vector<FocusArea>& areas) {
-    std::string out;
-    for (const auto& a : areas) {
-        if (!out.empty()) out += "|";
-        out += std::to_string(a.stars) + "@@" + a.text;
-    }
-    return out;
-}
-
-static std::vector<FocusArea> DeserializeFocusAreas(const std::string& s) {
-    std::vector<FocusArea> result;
-    if (s.empty()) return result;
-    std::string item;
-    std::istringstream ss(s);
-    while (std::getline(ss, item, '|')) {
-        auto sep = item.find("@@");
-        if (sep == std::string::npos) continue;
-        int stars = std::stoi(item.substr(0, sep));
-        std::string text = item.substr(sep + 2);
-        if (!text.empty())
-            result.push_back({text, std::max(1, std::min(5, stars))});
-    }
-    return result;
-}
-
-enum {
-    ID_NS_START          = wxID_HIGHEST + 300,
-    ID_NS_BACKEND,
-    ID_NS_OPEN_CONTEXT,
-    ID_NS_RESET_WEIGHTS,
-};
-
-wxBEGIN_EVENT_TABLE(NewSessionPanel, wxPanel)
-    EVT_BUTTON(ID_NS_START,          NewSessionPanel::OnStart)
-    EVT_CHOICE(ID_NS_BACKEND,        NewSessionPanel::OnBackendChanged)
-    EVT_BUTTON(ID_NS_OPEN_CONTEXT,   NewSessionPanel::OnOpenContext)
-    EVT_BUTTON(ID_NS_RESET_WEIGHTS,  NewSessionPanel::OnResetWeights)
-wxEND_EVENT_TABLE()
-
-static wxArrayString make_difficulties() {
-    wxArrayString s;
-    for (auto* n : {"mixed", "easy", "medium", "hard"}) s.Add(n);
-    return s;
-}
-
-static wxArrayString make_backends() {
-    wxArrayString s;
-    for (auto* n : {"claude -p", "Anthropic API", "Ollama (local)", "Clipboard (manual)"})
-        s.Add(n);
-    return s;
-}
-
-static std::vector<std::string> load_ollama_models() {
+static std::vector<std::string> FetchOllamaModels() {
     FILE* pipe = popen("curl -s --max-time 1 http://localhost:11434/api/tags 2>/dev/null", "r");
     if (!pipe) return {};
     std::string out;
@@ -115,269 +91,243 @@ static std::vector<std::string> load_ollama_models() {
 }
 
 // ---------------------------------------------------------------------------
-NewSessionPanel::NewSessionPanel(wxWindow* parent, StartCallback onSessionStarted)
-    : wxPanel(parent), m_onStart(std::move(onSessionStarted))
+// Event table
+// ---------------------------------------------------------------------------
+
+wxBEGIN_EVENT_TABLE(NewSessionPanel, wxPanel)
+    EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, NewSessionPanel::OnNsAction)
+wxEND_EVENT_TABLE()
+
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+NewSessionPanel::NewSessionPanel(wxWindow* parent, bool darkMode, StartCallback onSessionStarted)
+    : wxPanel(parent)
+    , m_onStart(std::move(onSessionStarted))
+    , m_darkMode(darkMode)
 {
-    auto* outer = new wxBoxSizer(wxVERTICAL);
-    auto* inner = new wxBoxSizer(wxVERTICAL);
+    m_state.darkMode = darkMode;
 
-    // ── Active project display ────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Project:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        m_projectLabel = new wxStaticText(this, wxID_ANY, "(none — activate a project first)");
-        wxFont f = m_projectLabel->GetFont();
-        f.SetStyle(wxFONTSTYLE_ITALIC);
-        m_projectLabel->SetFont(f);
-        row->Add(m_projectLabel, 1, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
+    m_webView = wxWebView::New(this, wxID_ANY);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(m_webView, 1, wxEXPAND);
+    SetSizer(sizer);
 
-        auto* ctxRow = new wxBoxSizer(wxHORIZONTAL);
-        ctxRow->Add(new wxStaticText(this, wxID_ANY,
-            "context.md (optional study material fed into every prompt):"),
-            0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-        ctxRow->Add(new wxButton(this, ID_NS_OPEN_CONTEXT, "Edit in vim",
-            wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT),
-            0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(ctxRow, 0, wxBOTTOM, 4);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
+    // Stub page so the webview has something to show before Render()
+    m_webView->SetPage("<html><body></body></html>", "");
 
-    // ── Topic label ───────────────────────────────────────────────────────
-    {
-        auto* label = new wxStaticText(this, wxID_ANY, "Topic (short name for Review tab):");
-        wxFont lf = label->GetFont();
-        lf.SetWeight(wxFONTWEIGHT_BOLD);
-        label->SetFont(lf);
-        inner->Add(label, 0, wxBOTTOM, 4);
+    // Add the script message handler after the event loop is running
+    CallAfter([this]() {
+        m_webView->AddScriptMessageHandler("nsAction");
+    });
 
-        m_topicCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-            wxDefaultPosition, wxSize(-1, -1), wxTE_RICH2);
-        wxFont tf = m_topicCtrl->GetFont();
-        tf.SetPointSize(tf.GetPointSize() + 2);
-        m_topicCtrl->SetFont(tf);
-        m_topicCtrl->SetHint("e.g. \"C++ memory model\" or \"AWS IAM\" or \"Spanish verbs\"");
-        inner->Add(m_topicCtrl, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-
-    // ── Instructions ─────────────────────────────────────────────────────
-    {
-        auto* label = new wxStaticText(this, wxID_ANY,
-            "What to focus on (injected into every prompt — be specific):");
-        inner->Add(label, 0, wxBOTTOM, 4);
-
-        m_instrCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-            wxDefaultPosition, wxSize(-1, 80),
-            wxTE_MULTILINE | wxTE_RICH2 | wxTE_WORDWRAP);
-        m_instrCtrl->SetHint(
-            "e.g. \"Focus on move semantics, RAII, and smart pointers. "
-            "Avoid basic syntax questions.\"");
-        inner->Add(m_instrCtrl, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-
-    // ── Focus areas ──────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY,
-            "Focus areas — add sub-topics and rate priority (★ = low, ★★★★★ = high):"),
-            1, wxALIGN_CENTER_VERTICAL);
-        auto* resetBtn = new wxButton(this, ID_NS_RESET_WEIGHTS,
-            wxString::FromUTF8("\xe2\x86\xba Reset \xf0\x9f\x91\x8d\xf0\x9f\x91\x8e weights"),
-            wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        resetBtn->SetToolTip("Clear all thumbs-up / thumbs-down topic preferences saved from exams");
-        row->Add(resetBtn, 0, wxLEFT | wxALIGN_CENTER_VERTICAL, 8);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
-
-        m_focusListPanel = new FocusListPanel(this, 140);
-        inner->Add(m_focusListPanel, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-
-    // ── Personality picker ────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY,
-            "Guest commentators — checked personalities appear as \xf0\x9f\x92\xac tidbits in explanations:"),
-            1, wxALIGN_CENTER_VERTICAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "Tidbits per turn:"),
-            0, wxALIGN_CENTER_VERTICAL | wxLEFT, 12);
-        m_tidbitCountCtrl = new wxSpinCtrl(this, wxID_ANY, "1",
-            wxDefaultPosition, wxSize(52, -1), wxSP_ARROW_KEYS, 1, 10, 1);
-        m_tidbitCountCtrl->SetToolTip("How many tidbit commentaries to include per explanation (1–10)");
-        row->Add(m_tidbitCountCtrl, 0, wxALIGN_CENTER_VERTICAL | wxLEFT, 4);
-        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 4);
-
-        m_personalityPanel = new PersonalityPickerPanel(this);
-        inner->Add(m_personalityPanel, 0, wxEXPAND | wxBOTTOM, 10);
-    }
-
-    // ── Difficulty + Question count ───────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-
-        row->Add(new wxStaticText(this, wxID_ANY, "Difficulty:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_difficultyCtrl = new wxChoice(this, wxID_ANY, wxDefaultPosition,
-                                        wxDefaultSize, make_difficulties());
-        m_difficultyCtrl->SetSelection(0);
-        row->Add(m_difficultyCtrl, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 20);
-
-        row->Add(new wxStaticText(this, wxID_ANY, "Questions:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_countCtrl = new wxSpinCtrl(this, wxID_ANY, "10",
-            wxDefaultPosition, wxSize(70, -1), wxSP_ARROW_KEYS, 1, 50, 10);
-        row->Add(m_countCtrl, 0, wxALIGN_CENTER_VERTICAL);
-
-        inner->Add(row, 0, wxBOTTOM, 10);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── LLM backend ───────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        row->Add(new wxStaticText(this, wxID_ANY, "LLM backend:"),
-                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_backendChoice = new wxChoice(this, ID_NS_BACKEND, wxDefaultPosition,
-                                       wxDefaultSize, make_backends());
-        m_backendChoice->SetSelection(0);
-        row->Add(m_backendChoice, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(row, 0, wxBOTTOM, 6);
-
-        // API key row (hidden unless Anthropic API selected)
-        auto* apiRow = new wxBoxSizer(wxHORIZONTAL);
-        apiRow->Add(new wxStaticText(this, wxID_ANY, "API key:"),
-                    0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_apiKeyCtrl = new wxTextCtrl(this, wxID_ANY, wxEmptyString,
-            wxDefaultPosition, wxSize(320, -1), wxTE_PASSWORD);
-        apiRow->Add(m_apiKeyCtrl, 0, wxALIGN_CENTER_VERTICAL);
-        m_apiKeySizer = inner->Add(apiRow, 0, wxBOTTOM, 6);
-        m_apiKeySizer->Show(false);
-
-        // Ollama model row (hidden unless Ollama selected)
-        auto* ollamaRow = new wxBoxSizer(wxHORIZONTAL);
-        ollamaRow->Add(new wxStaticText(this, wxID_ANY, "Ollama model:"),
-                       0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        m_ollamaModel = new wxComboBox(this, wxID_ANY, "llama3",
-            wxDefaultPosition, wxSize(240, -1), 0, nullptr, wxCB_DROPDOWN);
-        ollamaRow->Add(m_ollamaModel, 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 6);
-        auto* refreshBtn = new wxButton(this, wxID_ANY, "Refresh",
-            wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-        refreshBtn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
-            wxString cur = m_ollamaModel->GetValue();
-            m_ollamaModel->Clear();
-            for (auto& m : load_ollama_models())
-                m_ollamaModel->Append(wxString::FromUTF8(m));
-            m_ollamaModel->SetValue(cur.empty() && m_ollamaModel->GetCount() > 0
-                ? m_ollamaModel->GetString(0) : cur);
-            SetStatus(m_ollamaModel->GetCount() > 0
-                ? "Loaded Ollama models." : "No Ollama models found.");
-        });
-        ollamaRow->Add(refreshBtn, 0, wxALIGN_CENTER_VERTICAL);
-        m_ollamaSizer = inner->Add(ollamaRow, 0, wxBOTTOM, 8);
-        m_ollamaSizer->Show(false);
-    }
-    inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
-
-    // ── Corpus toggle (shown only when corpus.db exists for the project) ──
-    {
-        m_useCorpusCheck = new wxCheckBox(this, wxID_ANY,
-            "Use corpus for context (RAG) — retrieve relevant passages before each session");
-        m_corpusSizer = inner->Add(m_useCorpusCheck, 0, wxBOTTOM, 10);
-        m_corpusSizer->Show(false);
-    }
-
-    // ── Start button ──────────────────────────────────────────────────────
-    {
-        auto* row = new wxBoxSizer(wxHORIZONTAL);
-        m_startBtn = new wxButton(this, ID_NS_START, "Start Session");
-        wxFont bf = m_startBtn->GetFont();
-        bf.SetPointSize(bf.GetPointSize() + 2);
-        bf.SetWeight(wxFONTWEIGHT_BOLD);
-        m_startBtn->SetFont(bf);
-        row->Add(m_startBtn, 0);
-        inner->Add(row, 0, wxBOTTOM, 10);
-    }
-
-    // ── Status ────────────────────────────────────────────────────────────
-    m_statusCtrl = new wxTextCtrl(this, wxID_ANY, "",
-        wxDefaultPosition, wxSize(-1, 60),
-        wxTE_MULTILINE | wxTE_READONLY | wxTE_RICH2);
-    inner->Add(m_statusCtrl, 1, wxEXPAND);
-
-    outer->Add(inner, 1, wxEXPAND | wxALL, 14);
-    SetSizer(outer);
-
-    RestoreFormState();
+    LoadPersonalityLibrary();
+    Render();
 }
 
 // ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::Render() {
+    m_state.darkMode = m_darkMode;
+    std::string html = BuildNewSessionHTML(m_state);
+    m_webView->SetPage(wxString::FromUTF8(html), "");
+}
+
+// ---------------------------------------------------------------------------
+// SetDarkMode
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::SetDarkMode(bool dark) {
+    m_darkMode = dark;
+    Render();
+}
+
+// ---------------------------------------------------------------------------
+// LoadPersonalityLibrary — mirrors old PersonalityPickerPanel::LoadLibrary
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::LoadPersonalityLibrary() {
+    wxConfig cfg("TestTaker");
+    cfg.SetPath("/charlib");
+
+    wxString catStr;
+    if (!cfg.Read("categories", &catStr) || catStr.empty()) {
+        m_state.personalityLibrary = DefaultPersonalityLibrary();
+    } else {
+        m_state.personalityLibrary.clear();
+        wxStringTokenizer tok(catStr, ",");
+        while (tok.HasMoreTokens()) {
+            std::string cat = tok.GetNextToken().ToStdString();
+            wxString charStr;
+            cfg.Read(wxString::FromUTF8(cat), &charStr);
+            auto& vec = m_state.personalityLibrary[cat];
+            wxStringTokenizer ctok(charStr, "|");
+            while (ctok.HasMoreTokens())
+                vec.push_back(ctok.GetNextToken().ToStdString());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SavePersonalityLibrary — mirrors old PersonalityPickerPanel::SaveLibrary
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::SavePersonalityLibrary() const {
+    wxConfig cfg("TestTaker");
+    cfg.SetPath("/charlib");
+
+    wxString catStr;
+    for (auto& [cat, chars] : m_state.personalityLibrary) {
+        if (!catStr.empty()) catStr += ",";
+        catStr += wxString::FromUTF8(cat);
+
+        wxString charStr;
+        for (auto& ch : chars) {
+            if (!charStr.empty()) charStr += "|";
+            charStr += wxString::FromUTF8(ch);
+        }
+        cfg.Write(wxString::FromUTF8(cat), charStr);
+    }
+    cfg.Write("categories", catStr);
+}
+
+// ---------------------------------------------------------------------------
+// SyncProject
+// ---------------------------------------------------------------------------
+
 void NewSessionPanel::SyncProject(const std::string& projectDir) {
-    // On first call after a fresh launch m_activeProjectDir is empty, but the
-    // user may be reopening the same project they had last time.  Seed from
-    // the persisted value so we can detect a true project change.
     if (m_activeProjectDir.empty()) {
         AppState saved = LoadAppState();
         m_activeProjectDir = saved.lastExamProjectDir;
     }
     bool projectChanged = (projectDir != m_activeProjectDir);
-    m_activeProjectDir = projectDir;
+    m_activeProjectDir  = projectDir;
 
     if (projectDir.empty()) {
-        m_projectLabel->SetLabel("(none — activate a project first)");
-        m_corpusSizer->Show(false);
+        m_state.projectName = "";
+        m_state.hasCorpus   = false;
     } else {
-        m_projectLabel->SetLabel(wxString::FromUTF8(
-            fs::path(projectDir).filename().string()));
+        m_state.projectName = fs::path(projectDir).filename().string();
+        m_state.hasCorpus   = fs::exists(projectDir + "/corpus.db");
+        if (m_state.hasCorpus) m_state.useCorpus = true;
 
-        bool hasCorpus = fs::exists(projectDir + "/corpus.db");
-        m_corpusSizer->Show(hasCorpus);
-        if (hasCorpus) m_useCorpusCheck->SetValue(true);
+        ProjectConfig pcfg = LoadConfig(projectDir);
 
         if (projectChanged) {
-            // Different project: start with blank topic and instructions so that
-            // session-specific state from the previous project (e.g. C++ focus) doesn't
-            // bleed in.  Only restore the backend/credentials which are truly global.
-            m_topicCtrl->Clear();
-            m_instrCtrl->Clear();
-            m_focusListPanel->SetAreas({});
-            // Load per-project personality selection from the project's .config file.
-            ProjectConfig pcfg = LoadConfig(projectDir);
-            m_personalityPanel->SetSelected(SplitPipe(pcfg.personalities));
+            // New project — clear session-specific state, keep backend/credentials
+            m_state.topic        = "";
+            m_state.instructions = "";
+            m_state.focusAreas   = {};
+            m_state.selectedPersonalities = SplitPipe(pcfg.personalities);
+
             AppState st = LoadAppState();
-            if (!st.backend.empty()) {
-                int idx = m_backendChoice->FindString(wxString::FromUTF8(st.backend));
-                if (idx != wxNOT_FOUND) {
-                    m_backendChoice->SetSelection(idx);
-                    UpdateBackendFields();
-                }
-            }
-            if (!st.apiKey.empty())     m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));
-            if (!st.ollamaModel.empty()) m_ollamaModel->SetValue(wxString::FromUTF8(st.ollamaModel));
+            if (!st.backend.empty())    m_state.backend    = st.backend;
+            if (!st.apiKey.empty())     m_state.apiKey     = st.apiKey;
+            if (!st.ollamaModel.empty()) m_state.ollamaModel = st.ollamaModel;
         } else {
-            RestoreFormState();
-            // Reload personalities from project config (same project, may have changed).
-            ProjectConfig pcfg = LoadConfig(projectDir);
-            m_personalityPanel->SetSelected(SplitPipe(pcfg.personalities));
+            // Same project — restore saved form state
+            if (!pcfg.examTopic.empty())        m_state.topic        = pcfg.examTopic;
+            if (!pcfg.examInstructions.empty())  m_state.instructions = pcfg.examInstructions;
+            if (!pcfg.examFocusAreas.empty())
+                m_state.focusAreas = DeserializeFocusAreas(pcfg.examFocusAreas);
+            if (!pcfg.examBackend.empty())      m_state.backend      = pcfg.examBackend;
+            if (!pcfg.examApiKey.empty())        m_state.apiKey       = pcfg.examApiKey;
+            if (!pcfg.examOllamaModel.empty())   m_state.ollamaModel  = pcfg.examOllamaModel;
+            if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
+                m_state.tidbitCount = pcfg.examTidbitCount;
+            m_state.selectedPersonalities = SplitPipe(pcfg.personalities);
         }
     }
-    if (GetSizer()) GetSizer()->Layout();
+
+    Render();
 }
 
 // ---------------------------------------------------------------------------
-void NewSessionPanel::UpdateBackendFields() {
-    std::string label = m_backendChoice->GetString(
-        m_backendChoice->GetSelection()).ToStdString();
-    m_apiKeySizer->Show(label == "Anthropic API");
-    m_ollamaSizer->Show(label == "Ollama (local)");
-    if (GetSizer()) GetSizer()->Layout();
+// PreFill — called from deep-dive dialog
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::PreFill(const std::string&           topic,
+                               const std::vector<FocusArea>& focusAreas,
+                               const std::string&           difficulty,
+                               int                          questionCount)
+{
+    if (!topic.empty())     m_state.topic      = topic;
+    m_state.focusAreas  = focusAreas;
+    if (!difficulty.empty()) m_state.difficulty = difficulty;
+    if (questionCount > 0)  m_state.questions  = questionCount;
+    Render();
 }
 
 // ---------------------------------------------------------------------------
-void NewSessionPanel::SetStatus(const wxString& msg) {
-    m_statusCtrl->SetValue(msg);
+// SaveFormState
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::SaveFormState() const {
+    if (!m_activeProjectDir.empty()) {
+        // Best-effort: try to get current form values from the WebView
+        std::string json = ExtractFormJSON();
+
+        ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
+        if (!json.empty()) {
+            std::string topic = nsJsonField(json, "topic");
+            std::string instr = nsJsonField(json, "instructions");
+            std::string diff  = nsJsonField(json, "difficulty");
+            std::string qs    = nsJsonField(json, "questions");
+            std::string bk    = nsJsonField(json, "backend");
+            std::string ak    = nsJsonField(json, "apiKey");
+            std::string om    = nsJsonField(json, "ollamaModel");
+            std::string fa    = nsJsonField(json, "focusAreas");
+            std::string pers  = nsJsonField(json, "personalities");
+            std::string tc    = nsJsonField(json, "tidbitCount");
+
+            if (!topic.empty()) pcfg.examTopic        = topic;
+            if (!instr.empty()) pcfg.examInstructions = instr;
+            if (!diff.empty())  pcfg.examFocusAreas   = fa;
+            if (!bk.empty())    pcfg.examBackend       = bk;
+            if (!ak.empty())    pcfg.examApiKey        = ak;
+            if (!om.empty())    pcfg.examOllamaModel   = om;
+            if (!pers.empty())  pcfg.personalities     = pers;
+            if (!tc.empty())    {
+                try { pcfg.examTidbitCount = std::stoi(tc); } catch (...) {}
+            }
+            (void)qs;
+        } else {
+            // Fallback to in-memory state
+            pcfg.examTopic        = m_state.topic;
+            pcfg.examInstructions = m_state.instructions;
+            pcfg.examFocusAreas   = SerializeFocusAreas(m_state.focusAreas);
+            pcfg.examBackend      = m_state.backend;
+            pcfg.examApiKey       = m_state.apiKey;
+            pcfg.examOllamaModel  = m_state.ollamaModel;
+            pcfg.personalities    = JoinPipe(m_state.selectedPersonalities);
+            pcfg.examTidbitCount  = m_state.tidbitCount;
+        }
+        SaveConfig(m_activeProjectDir, pcfg);
+    }
+
+    AppState st = LoadAppState();
+    st.lastExamProjectDir = m_activeProjectDir;
+    SaveAppState(st);
 }
 
 // ---------------------------------------------------------------------------
+// ExtractFormJSON
+// ---------------------------------------------------------------------------
+
+std::string NewSessionPanel::ExtractFormJSON() const {
+    wxString json;
+    m_webView->RunScript(
+        "typeof nsCollectForm === 'function' ? nsCollectForm() : '{}'", &json);
+    return json.ToStdString();
+}
+
+// ---------------------------------------------------------------------------
+// GenerateSessionFilename
+// ---------------------------------------------------------------------------
+
 std::string NewSessionPanel::GenerateSessionFilename() const {
     auto now = std::chrono::system_clock::now();
     std::time_t t = std::chrono::system_clock::to_time_t(now);
@@ -389,109 +339,62 @@ std::string NewSessionPanel::GenerateSessionFilename() const {
 }
 
 // ---------------------------------------------------------------------------
-void NewSessionPanel::SaveFormState() const {
-    // All exam form state is per-project so two instances on different projects
-    // never clobber each other.
-    if (!m_activeProjectDir.empty()) {
-        ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
-        pcfg.examTopic        = m_topicCtrl->GetValue().ToStdString();
-        pcfg.examInstructions = m_instrCtrl->GetValue().ToStdString();
-        pcfg.examFocusAreas   = SerializeFocusAreas(m_focusListPanel->GetAreas());
-        pcfg.examBackend      = m_backendChoice->GetString(
-            m_backendChoice->GetSelection()).ToStdString();
-        pcfg.examApiKey       = m_apiKeyCtrl->GetValue().ToStdString();
-        pcfg.examOllamaModel  = m_ollamaModel->GetValue().ToStdString();
-        pcfg.personalities    = JoinPipe(m_personalityPanel->GetSelected());
-        pcfg.examTidbitCount  = m_tidbitCountCtrl->GetValue();
-        SaveConfig(m_activeProjectDir, pcfg);
-    }
+// OnNsAction — dispatch incoming JS messages
+// ---------------------------------------------------------------------------
 
-    // Only the active project dir stays in global state so we know which project
-    // to re-open on next startup.
-    AppState st = LoadAppState();
-    st.lastExamProjectDir = m_activeProjectDir;
-    SaveAppState(st);
-}
+void NewSessionPanel::OnNsAction(wxWebViewEvent& evt) {
+    std::string payload = evt.GetString().ToStdString();
+    std::string action  = nsJsonField(payload, "action");
 
-void NewSessionPanel::RestoreFormState() {
-    if (m_activeProjectDir.empty()) return;
-    ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
-    if (!pcfg.examTopic.empty())
-        m_topicCtrl->SetValue(wxString::FromUTF8(pcfg.examTopic));
-    if (!pcfg.examInstructions.empty())
-        m_instrCtrl->SetValue(wxString::FromUTF8(pcfg.examInstructions));
-    if (!pcfg.examBackend.empty()) {
-        int idx = m_backendChoice->FindString(wxString::FromUTF8(pcfg.examBackend));
-        if (idx != wxNOT_FOUND) {
-            m_backendChoice->SetSelection(idx);
-            UpdateBackendFields();
-        }
-    }
-    if (!pcfg.examFocusAreas.empty())
-        m_focusListPanel->SetAreas(DeserializeFocusAreas(pcfg.examFocusAreas));
-    if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
-        m_tidbitCountCtrl->SetValue(pcfg.examTidbitCount);
-    if (!pcfg.examApiKey.empty())
-        m_apiKeyCtrl->SetValue(wxString::FromUTF8(pcfg.examApiKey));
-    if (!pcfg.examOllamaModel.empty())
-        m_ollamaModel->SetValue(wxString::FromUTF8(pcfg.examOllamaModel));
+    if (action == "start")           HandleStart(payload);
+    else if (action == "refresh-ollama") HandleRefreshOllama();
+    else if (action == "open-context")   HandleOpenContext();
+    else if (action == "reset-weights")  HandleResetWeights();
+    else if (action == "add-personality")    HandleAddPersonality(payload);
+    else if (action == "delete-personality") HandleDeletePersonality(payload);
 }
 
 // ---------------------------------------------------------------------------
-void NewSessionPanel::OnBackendChanged(wxCommandEvent&) {
-    UpdateBackendFields();
-    if (m_backendChoice->GetString(m_backendChoice->GetSelection()) == "Ollama (local)"
-        && m_ollamaModel->GetCount() == 0) {
-        for (auto& m : load_ollama_models())
-            m_ollamaModel->Append(wxString::FromUTF8(m));
-    }
-}
-
+// HandleStart — parse JSON payload, build configs, launch session
 // ---------------------------------------------------------------------------
-void NewSessionPanel::OnOpenContext(wxCommandEvent&) {
-    if (m_activeProjectDir.empty()) {
-        wxMessageBox("Activate a project first.", "No project", wxOK | wxICON_WARNING, this);
-        return;
-    }
-    std::string ctxPath = m_activeProjectDir + "/context.md";
-    // Create stub if absent
-    if (!fs::exists(ctxPath)) {
-        std::ofstream f(ctxPath);
-        f << "# Study Context\n\n"
-             "Paste your study notes, syllabus, or reference material here.\n"
-             "This file is injected into every exam prompt and chat message.\n";
-    }
-    wxExecute("open -a Terminal " + wxString::FromUTF8(
-        "\"$(echo vim \\\"" + ctxPath + "\\\")\""), wxEXEC_ASYNC);
-    // Simpler: just spawn vim directly in a terminal via the shell
-    std::string cmd = "osascript -e 'tell application \"Terminal\" to do script "
-                      "\"vim \\\"" + ctxPath + "\\\"\"'";
-    wxExecute(wxString::FromUTF8(cmd), wxEXEC_ASYNC);
-}
 
-// ---------------------------------------------------------------------------
-void NewSessionPanel::OnStart(wxCommandEvent&) {
-    wxString topic = m_topicCtrl->GetValue().Trim();
+void NewSessionPanel::HandleStart(const std::string& payload) {
+    std::string topic = nsJsonField(payload, "topic");
     if (topic.empty()) {
-        SetStatus("Enter a topic first.");
+        m_webView->RunScript("nsSetStatus('Enter a topic first.')");
         return;
     }
     if (m_activeProjectDir.empty()) {
-        SetStatus("Activate a project in the Projects tab first.");
+        m_webView->RunScript("nsSetStatus('Activate a project in the Projects tab first.')");
         return;
     }
 
-    // Build ExamConfig
+    std::string instr    = nsJsonField(payload, "instructions");
+    std::string diff     = nsJsonField(payload, "difficulty");
+    std::string qsStr    = nsJsonField(payload, "questions");
+    std::string backend  = nsJsonField(payload, "backend");
+    std::string apiKey   = nsJsonField(payload, "apiKey");
+    std::string olModel  = nsJsonField(payload, "ollamaModel");
+    std::string faStr    = nsJsonField(payload, "focusAreas");
+    std::string persStr  = nsJsonField(payload, "personalities");
+    std::string tcStr    = nsJsonField(payload, "tidbitCount");
+    std::string ucStr    = nsJsonField(payload, "useCorpus");
+
+    int totalQ = 10;
+    try { totalQ = std::stoi(qsStr); } catch (...) {}
+    int tidCnt = 1;
+    try { tidCnt = std::stoi(tcStr); } catch (...) {}
+    bool useCorpus = (ucStr == "true");
+
     ExamConfig cfg;
-    cfg.topic          = topic.ToStdString();
-    cfg.instructions   = m_instrCtrl->GetValue().Trim().ToStdString();
-    cfg.focusAreaList  = m_focusListPanel->GetAreas();
-    cfg.difficulty     = m_difficultyCtrl->GetString(
-        m_difficultyCtrl->GetSelection()).ToStdString();
-    cfg.totalQuestions = m_countCtrl->GetValue();
-    cfg.useCorpus      = m_corpusSizer->IsShown() && m_useCorpusCheck->GetValue();
-    cfg.personalities  = m_personalityPanel->GetSelected();
-    cfg.tidbitCount    = m_tidbitCountCtrl->GetValue();
+    cfg.topic          = topic;
+    cfg.instructions   = instr;
+    cfg.focusAreaList  = DeserializeFocusAreas(faStr);
+    cfg.difficulty     = diff.empty() ? "mixed" : diff;
+    cfg.totalQuestions = totalQ;
+    cfg.useCorpus      = useCorpus;
+    cfg.personalities  = SplitPipe(persStr);
+    cfg.tidbitCount    = tidCnt;
 
     // Load context.md if present
     std::string ctxPath = m_activeProjectDir + "/context.md";
@@ -499,38 +402,33 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     if (ctxFile)
         cfg.projectContext.assign(std::istreambuf_iterator<char>(ctxFile), {});
 
-    // Build LLMConfig
-    std::string backendLabel = m_backendChoice->GetString(
-        m_backendChoice->GetSelection()).ToStdString();
     LLMConfig llmCfg;
-    llmCfg.backend     = BackendFromLabel(backendLabel);
-    llmCfg.apiKey      = m_apiKeyCtrl->GetValue().ToStdString();
-    llmCfg.ollamaModel = m_ollamaModel->GetValue().ToStdString();
+    llmCfg.backend     = BackendFromLabel(backend);
+    llmCfg.apiKey      = apiKey;
+    llmCfg.ollamaModel = olModel;
+    cfg.largeModel     = IsLargeModel(llmCfg.backend);
 
-    cfg.largeModel = IsLargeModel(llmCfg.backend);
-
-    // Create session file
     if (!InitProject(m_activeProjectDir)) {
-        SetStatus("Cannot initialise project folder.");
+        m_webView->RunScript("nsSetStatus('Cannot initialise project folder.')");
         return;
     }
     std::string sessionFile = m_activeProjectDir + "/" + GenerateSessionFilename();
-
-    // Write session header
     {
         std::ofstream f(sessionFile);
-        if (!f) { SetStatus("Cannot create session file."); return; }
-        f << "# " << cfg.topic << " — Session\n\n"
+        if (!f) {
+            m_webView->RunScript("nsSetStatus('Cannot create session file.')");
+            return;
+        }
+        f << "# " << cfg.topic << " \xe2\x80\x94 Session\n\n"
           << "**Topic:** " << cfg.topic << "\n";
         if (!cfg.instructions.empty())
             f << "**Instructions:** " << cfg.instructions << "\n";
         f << "**Difficulty:** " << cfg.difficulty << "\n"
           << "**Questions:** " << cfg.totalQuestions << "\n"
-          << "**Backend:** " << backendLabel << "\n\n";
+          << "**Backend:** " << backend << "\n\n";
     }
 
-    // Register session in metadata
-    EnsureExamMeta(m_activeProjectDir, backendLabel);
+    EnsureExamMeta(m_activeProjectDir, backend);
     SessionRecord rec;
     rec.sessionFile    = fs::path(sessionFile).filename().string();
     rec.startedAt      = MetaNow();
@@ -539,9 +437,17 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
     rec.totalQuestions = cfg.totalQuestions;
     RecordSession(m_activeProjectDir, rec);
 
+    // Update in-memory state and save
+    m_state.topic        = topic;
+    m_state.instructions = instr;
+    m_state.focusAreas   = cfg.focusAreaList;
+    m_state.backend      = backend;
+    m_state.apiKey       = apiKey;
+    m_state.ollamaModel  = olModel;
+    m_state.selectedPersonalities = cfg.personalities;
+    m_state.tidbitCount  = tidCnt;
     SaveFormState();
 
-    // Persist last session per-project so it can be resumed after restart.
     {
         ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
         pcfg.lastSession = fs::path(sessionFile).filename().string();
@@ -553,35 +459,100 @@ void NewSessionPanel::OnStart(wxCommandEvent&) {
                       + "  focusAreas=" + std::to_string(cfg.focusAreaList.size())
                       + "  difficulty=" + cfg.difficulty
                       + "  questions=" + std::to_string(cfg.totalQuestions)
-                      + "  backend=" + backendLabel);
+                      + "  backend=" + backend);
 
-    SetStatus("Starting: " + wxString::FromUTF8(cfg.topic));
+    wxString statusScript = "nsSetStatus('Starting: " + wxString::FromUTF8(cfg.topic) + "')";
+    m_webView->RunScript(statusScript);
 
-    if (m_onStart) m_onStart(m_activeProjectDir, sessionFile, cfg, llmCfg);
+    if (m_onStart)
+        m_onStart(m_activeProjectDir, sessionFile, cfg, llmCfg);
 }
 
 // ---------------------------------------------------------------------------
-void NewSessionPanel::OnResetWeights(wxCommandEvent&) {
+// HandleRefreshOllama
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::HandleRefreshOllama() {
+    auto models = FetchOllamaModels();
+    m_state.ollamaModels = models;
+
+    // Build a JS array literal and call nsSetOllamaModels
+    std::string arr = "[";
+    for (size_t i = 0; i < models.size(); ++i) {
+        if (i) arr += ",";
+        arr += "'" + models[i] + "'";
+    }
+    arr += "]";
+
+    m_webView->RunScript("nsSetOllamaModels(" + arr + ")");
+
+    std::string status = models.empty() ? "No Ollama models found." : "Loaded Ollama models.";
+    m_webView->RunScript("nsSetStatus('" + status + "')");
+}
+
+// ---------------------------------------------------------------------------
+// HandleOpenContext
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::HandleOpenContext() {
+    if (m_activeProjectDir.empty()) {
+        wxMessageBox("Activate a project first.", "No project", wxOK | wxICON_WARNING, this);
+        return;
+    }
+    std::string ctxPath = m_activeProjectDir + "/context.md";
+    if (!fs::exists(ctxPath)) {
+        std::ofstream f(ctxPath);
+        f << "# Study Context\n\n"
+             "Paste your study notes, syllabus, or reference material here.\n"
+             "This file is injected into every exam prompt and chat message.\n";
+    }
+    std::string cmd = "osascript -e 'tell application \"Terminal\" to do script "
+                      "\"vim \\\"" + ctxPath + "\\\"\"'";
+    wxExecute(wxString::FromUTF8(cmd), wxEXEC_ASYNC);
+}
+
+// ---------------------------------------------------------------------------
+// HandleResetWeights
+// ---------------------------------------------------------------------------
+
+void NewSessionPanel::HandleResetWeights() {
     if (m_activeProjectDir.empty()) return;
     ProjectConfig pcfg = LoadConfig(m_activeProjectDir);
     pcfg.examMoreOf.clear();
     pcfg.examLessOf.clear();
     SaveConfig(m_activeProjectDir, pcfg);
-    SetStatus("Topic weights cleared.");
+    m_webView->RunScript("nsSetStatus('Topic weights cleared.')");
 }
 
 // ---------------------------------------------------------------------------
-void NewSessionPanel::PreFill(const std::string&           topic,
-                               const std::vector<FocusArea>& focusAreas,
-                               const std::string&           difficulty,
-                               int                          questionCount) {
-    if (!topic.empty())
-        m_topicCtrl->SetValue(wxString::FromUTF8(topic));
-    m_focusListPanel->SetAreas(focusAreas);
+// HandleAddPersonality / HandleDeletePersonality
+// ---------------------------------------------------------------------------
 
-    if (!difficulty.empty()) {
-        int idx = m_difficultyCtrl->FindString(wxString::FromUTF8(difficulty));
-        if (idx != wxNOT_FOUND) m_difficultyCtrl->SetSelection(idx);
-    }
-    if (questionCount > 0) m_countCtrl->SetValue(questionCount);
+void NewSessionPanel::HandleAddPersonality(const std::string& payload) {
+    std::string cat  = nsJsonField(payload, "category");
+    std::string name = nsJsonField(payload, "name");
+    if (cat.empty() || name.empty()) return;
+
+    auto& vec = m_state.personalityLibrary[cat];
+    if (std::find(vec.begin(), vec.end(), name) != vec.end()) return;
+    vec.push_back(name);
+    SavePersonalityLibrary();
+    Render();
+}
+
+void NewSessionPanel::HandleDeletePersonality(const std::string& payload) {
+    std::string cat  = nsJsonField(payload, "category");
+    std::string name = nsJsonField(payload, "name");
+    if (cat.empty() || name.empty()) return;
+
+    auto it = m_state.personalityLibrary.find(cat);
+    if (it == m_state.personalityLibrary.end()) return;
+    auto& vec = it->second;
+    vec.erase(std::remove(vec.begin(), vec.end(), name), vec.end());
+    m_state.selectedPersonalities.erase(
+        std::remove(m_state.selectedPersonalities.begin(),
+                    m_state.selectedPersonalities.end(), name),
+        m_state.selectedPersonalities.end());
+    SavePersonalityLibrary();
+    Render();
 }
