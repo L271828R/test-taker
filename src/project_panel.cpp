@@ -4,16 +4,13 @@
 #include "logger.h"
 #include "meta.h"
 #include "project_search.h"
-#include <wx/choice.h>
 #include <wx/dirdlg.h>
 #include <wx/msgdlg.h>
 #include <wx/sizer.h>
-#include <wx/statline.h>
 #include <wx/textdlg.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include <set>
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -22,44 +19,53 @@
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Widget / event IDs
+// Event table
 // ---------------------------------------------------------------------------
-enum {
-    ID_PP_TREE        = wxID_HIGHEST + 400,
-    ID_PP_SEARCH,
-    ID_PP_SORT,
-    ID_PP_ACTIVATE,
-    ID_PP_RENAME,
-    ID_PP_REFRESH,
-    ID_PP_SET_FOLDER,
-    ID_PP_NEW_SUBFOLDER,
-    ID_PP_NEW_PROJECT,
-    ID_PP_DELETE
-};
-
-enum class SortOrder { Name, Created, Modified };
 
 wxBEGIN_EVENT_TABLE(ProjectPanel, wxPanel)
-    EVT_TEXT(ID_PP_SEARCH,                  ProjectPanel::OnSearchChanged)
-    EVT_CHOICE(ID_PP_SORT,                  ProjectPanel::OnSortChanged)
-    EVT_BUTTON(ID_PP_ACTIVATE,              ProjectPanel::OnActivateBtn)
-    EVT_BUTTON(ID_PP_RENAME,               ProjectPanel::OnRenameBtn)
-    EVT_BUTTON(ID_PP_DELETE,               ProjectPanel::OnDeleteBtn)
-    EVT_BUTTON(ID_PP_NEW_PROJECT,           ProjectPanel::OnNewProjectBtn)
-    EVT_BUTTON(ID_PP_NEW_SUBFOLDER,         ProjectPanel::OnNewSubfolder)
-    EVT_BUTTON(ID_PP_REFRESH,              ProjectPanel::OnRefreshBtn)
-    EVT_BUTTON(ID_PP_SET_FOLDER,           ProjectPanel::OnSetFolderBtn)
-    EVT_TREE_SEL_CHANGED(ID_PP_TREE,       ProjectPanel::OnTreeSelChanged)
-    EVT_TREE_ITEM_ACTIVATED(ID_PP_TREE,    ProjectPanel::OnTreeItemActivated)
-    EVT_TREE_ITEM_EXPANDING(ID_PP_TREE,    ProjectPanel::OnTreeExpanding)
-    EVT_TREE_ITEM_COLLAPSING(ID_PP_TREE,   ProjectPanel::OnTreeCollapsing)
-    EVT_TREE_BEGIN_DRAG(ID_PP_TREE,        ProjectPanel::OnTreeBeginDrag)
-    EVT_TREE_END_DRAG(ID_PP_TREE,          ProjectPanel::OnTreeEndDrag)
+    EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, ProjectPanel::OnPpAction)
 wxEND_EVENT_TABLE()
 
-// ===========================================================================
-// Static helpers (preserved from original implementation)
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// JSON field extractor (same pattern as nsJsonField / chatJsonField)
+// ---------------------------------------------------------------------------
+
+static std::string ppJsonField(const std::string& json, const std::string& key) {
+    std::string kq = "\"" + key + "\":";
+    auto pos = json.find(kq);
+    if (pos == std::string::npos) return "";
+    pos += kq.size();
+    if (pos >= json.size()) return "";
+
+    if (json[pos] == '"') {
+        ++pos;
+        std::string val;
+        while (pos < json.size() && json[pos] != '"') {
+            if (json[pos] == '\\' && pos + 1 < json.size()) {
+                ++pos;
+                switch (json[pos]) {
+                    case 'n': val += '\n'; break;
+                    case 't': val += '\t'; break;
+                    case '"': val += '"'; break;
+                    case '\\': val += '\\'; break;
+                    default: val += json[pos]; break;
+                }
+            } else {
+                val += json[pos];
+            }
+            ++pos;
+        }
+        return val;
+    } else {
+        size_t end = json.find_first_of(",}", pos);
+        if (end == std::string::npos) end = json.size();
+        return json.substr(pos, end - pos);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Static helpers (preserved from original)
+// ---------------------------------------------------------------------------
 
 static std::string fmtTs(const std::string& ts) {
     if (ts.size() < 16) return ts;
@@ -127,7 +133,6 @@ static bool validProjectName(const std::string& name) {
            name != "." && name != "..";
 }
 
-// Returns true when a project node should be visible given query.
 static bool projectMatchesQuery(const std::string& name,
                                 const std::string& path,
                                 const std::string& query) {
@@ -136,102 +141,42 @@ static bool projectMatchesQuery(const std::string& name,
     return ProjectMatchesSearch(name, path, meta.source, lastLLMSummary(meta), query);
 }
 
-// ===========================================================================
-// Constructor
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// BuildTree helpers — recursive scan producing ProjectEntry tree
+// ---------------------------------------------------------------------------
 
-ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
-    : wxPanel(parent, wxID_ANY)
-    , m_openCallback(std::move(onProjectActivated))
-{
-    auto* outer = new wxBoxSizer(wxVERTICAL);
-    auto* inner = new wxBoxSizer(wxVERTICAL);
-
-    inner->Add(new wxStaticText(this, wxID_ANY, "Available Projects:"), 0, wxBOTTOM, 6);
-
-    {
-        auto* searchRow = new wxBoxSizer(wxHORIZONTAL);
-        m_searchCtrl = new wxTextCtrl(this, ID_PP_SEARCH, wxEmptyString,
-                                      wxDefaultPosition, wxDefaultSize,
-                                      wxTE_PROCESS_ENTER);
-        m_searchCtrl->SetHint("Search projects...");
-        searchRow->Add(m_searchCtrl, 1, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
-
-        searchRow->Add(new wxStaticText(this, wxID_ANY, "Sort:"),
-                       0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 4);
-        wxArrayString sortLabels;
-        sortLabels.Add("Name");
-        sortLabels.Add("Created");
-        sortLabels.Add("Modified");
-        m_sortChoice = new wxChoice(this, ID_PP_SORT, wxDefaultPosition,
-                                    wxDefaultSize, sortLabels);
-        m_sortChoice->SetSelection(0);
-        searchRow->Add(m_sortChoice, 0, wxALIGN_CENTER_VERTICAL);
-        inner->Add(searchRow, 0, wxEXPAND | wxBOTTOM, 8);
-    }
-
-    m_treeCtrl = new wxTreeCtrl(this, ID_PP_TREE,
-                                wxDefaultPosition, wxDefaultSize,
-                                wxTR_HAS_BUTTONS | wxTR_HIDE_ROOT |
-                                wxTR_SINGLE | wxTR_LINES_AT_ROOT);
-    inner->Add(m_treeCtrl, 1, wxEXPAND | wxBOTTOM, 10);
-
-    m_projectPathLabel = new wxStaticText(this, wxID_ANY, "Select a project to see its path.");
-    wxFont small = m_projectPathLabel->GetFont();
-    small.SetPointSize(small.GetPointSize() - 1);
-    m_projectPathLabel->SetFont(small);
-    inner->Add(m_projectPathLabel, 0, wxBOTTOM, 4);
-
-    m_statsLabel = new wxStaticText(this, wxID_ANY, wxEmptyString);
-    m_statsLabel->SetFont(small);
-    inner->Add(m_statsLabel, 0, wxBOTTOM, 10);
-
-    auto* btnRow = new wxBoxSizer(wxHORIZONTAL);
-
-    m_activateBtn = new wxButton(this, ID_PP_ACTIVATE, "Activate Project");
-    m_activateBtn->Disable();
-    btnRow->Add(m_activateBtn, 0, wxRIGHT, 6);
-
-    m_renameBtn = new wxButton(this, ID_PP_RENAME, "Rename");
-    m_renameBtn->Disable();
-    btnRow->Add(m_renameBtn, 0, wxRIGHT, 6);
-
-    m_deleteBtn = new wxButton(this, ID_PP_DELETE, "Delete…");
-    m_deleteBtn->Disable();
-    btnRow->Add(m_deleteBtn, 0, wxRIGHT, 6);
-
-    m_newProjectBtn = new wxButton(this, ID_PP_NEW_PROJECT, "New Project…");
-    m_newProjectBtn->Disable();
-    btnRow->Add(m_newProjectBtn, 0, wxRIGHT, 6);
-
-    m_newSubfolderBtn = new wxButton(this, ID_PP_NEW_SUBFOLDER, "New Subfolder…");
-    m_newSubfolderBtn->Disable();
-    btnRow->Add(m_newSubfolderBtn, 0, wxRIGHT, 6);
-
-    btnRow->AddStretchSpacer();
-
-    m_setFolderBtn = new wxButton(this, ID_PP_SET_FOLDER, "Set Projects Folder…");
-    btnRow->Add(m_setFolderBtn, 0, wxRIGHT, 6);
-
-    btnRow->Add(new wxButton(this, ID_PP_REFRESH, "Refresh"), 0);
-
-    inner->Add(btnRow, 0, wxEXPAND | wxBOTTOM, 10);
-
-    outer->Add(inner, 1, wxEXPAND | wxALL, 14);
-    SetSizer(outer);
-
-    RefreshProjects();
+static std::string dateStrFor(const std::string& sortOrder,
+                               const std::string& childPath,
+                               const ProjectMeta& meta) {
+    if (sortOrder == "created" && !meta.created.empty())
+        return "  [" + fmtTs(meta.created) + "]";
+    if (sortOrder == "modified")
+        return "  [" + modifiedTime(childPath) + "]";
+    return "";
 }
 
-// ===========================================================================
-// Tree population
-// ===========================================================================
+static bool compareEntries(const fs::directory_entry& a,
+                            const fs::directory_entry& b,
+                            const std::string& sortOrder) {
+    if (sortOrder == "created") {
+        auto ma = LoadProjectMeta(a.path().string());
+        auto mb = LoadProjectMeta(b.path().string());
+        if (ma.created != mb.created) return ma.created < mb.created;
+    } else if (sortOrder == "modified") {
+        std::error_code e1, e2;
+        auto ta = fs::last_write_time(a.path(), e1);
+        auto tb = fs::last_write_time(b.path(), e2);
+        if (!e1 && !e2 && ta != tb) return ta < tb;
+    }
+    return a.path().filename() < b.path().filename();
+}
 
-bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
-                                const std::string& dirPath,
-                                int depth,
-                                const std::string& query,
-                                int sortOrder)
+// Returns true if at least one project was added.
+static bool PopulateEntries(std::vector<ProjectEntry>& out,
+                             const std::string& dirPath,
+                             int depth,
+                             const std::string& query,
+                             const std::string& sortOrder)
 {
     if (depth <= 0) return false;
 
@@ -242,19 +187,7 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
 
     std::sort(entries.begin(), entries.end(),
               [&](const fs::directory_entry& a, const fs::directory_entry& b) {
-                  if (sortOrder == 1) {
-                      // Created: use meta timestamp, fall back to name.
-                      auto ma = LoadProjectMeta(a.path().string());
-                      auto mb = LoadProjectMeta(b.path().string());
-                      if (ma.created != mb.created) return ma.created < mb.created;
-                  } else if (sortOrder == 2) {
-                      // Modified: filesystem mtime.
-                      std::error_code e1, e2;
-                      auto ta = fs::last_write_time(a.path(), e1);
-                      auto tb = fs::last_write_time(b.path(), e2);
-                      if (!e1 && !e2 && ta != tb) return ta < tb;
-                  }
-                  return a.path().filename() < b.path().filename();
+                  return compareEntries(a, b, sortOrder);
               });
 
     bool anyAdded = false;
@@ -267,305 +200,180 @@ bool ProjectPanel::PopulateTree(wxTreeItemId parentId,
         std::string childName = entry.path().filename().string();
 
         if (ProjectExists(childPath)) {
-            // ---- Project node ----
-            bool visible = query.empty() || projectMatchesQuery(childName, childPath, query);
+            bool visible = query.empty() ||
+                           projectMatchesQuery(childName, childPath, query);
             if (!visible) continue;
 
             std::string source = sourceFromConfig(childPath);
             EnsureProjectMeta(childPath, source);
             ProjectMeta meta = LoadProjectMeta(childPath);
 
-            // Append a date annotation to the label based on sort order.
-            std::string dateStr;
-            if (sortOrder == 1 && !meta.created.empty())
-                dateStr = "  [" + fmtTs(meta.created) + "]";
-            else if (sortOrder == 2)
-                dateStr = "  [" + modifiedTime(childPath) + "]";
-
-            auto* data = new TreeNode();
-            data->kind = TreeNode::Kind::Project;
-            data->path = childPath;
-            data->name = childName;
-
-            wxString label = wxString::FromUTF8("\U0001F4C4 " + childName + dateStr);
-            m_treeCtrl->AppendItem(parentId, label, -1, -1, data);
+            ProjectEntry proj;
+            proj.path     = childPath;
+            proj.name     = childName;
+            proj.isFolder = false;
+            proj.dateStr  = dateStrFor(sortOrder, childPath, meta);
+            proj.stats    = buildStats(childPath);
+            out.push_back(std::move(proj));
             anyAdded = true;
         } else {
-            // ---- Folder node ----
-            // We only add the folder if at least one descendant project matches.
-            // To test this we add a temporary folder item, populate it, and
-            // remove it if nothing was added under it.
-            auto* data = new TreeNode();
-            data->kind = TreeNode::Kind::Folder;
-            data->path = childPath;
-            data->name = childName;
+            ProjectEntry folder;
+            folder.path     = childPath;
+            folder.name     = childName;
+            folder.isFolder = true;
 
-            wxString label = wxString::FromUTF8("\U0001F4C1 " + childName);
-            wxTreeItemId folderId = m_treeCtrl->AppendItem(parentId, label, -1, -1, data);
+            bool childAdded = PopulateEntries(folder.children, childPath,
+                                              depth - 1, query, sortOrder);
 
-            bool childAdded = PopulateTree(folderId, childPath, depth - 1, query, sortOrder);
             if (!childAdded && !query.empty()) {
-                // No matching descendants — hide the folder during search.
-                m_treeCtrl->Delete(folderId);
-            } else if (childAdded || query.empty()) {
-                // Restore expand state.
-                if (m_expandedPaths.count(childPath))
-                    m_treeCtrl->Expand(folderId);
-                anyAdded = true;
+                // No matching descendants — skip folder during search
+                continue;
             }
+            out.push_back(std::move(folder));
+            anyAdded = true;
         }
     }
 
     return anyAdded;
 }
 
-// ===========================================================================
-// RefreshProjects
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+
+ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
+    : wxPanel(parent, wxID_ANY)
+    , m_openCallback(std::move(onProjectActivated))
+{
+    m_webView = wxWebView::New(this, wxID_ANY);
+    auto* sizer = new wxBoxSizer(wxVERTICAL);
+    sizer->Add(m_webView, 1, wxEXPAND);
+    SetSizer(sizer);
+
+    m_webView->SetPage("<html><body></body></html>", "");
+
+    CallAfter([this]() {
+        m_webView->AddScriptMessageHandler("ppAction");
+    });
+
+    BuildTree();
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::Render() {
+    std::string html = BuildProjectPanelHTML(m_state);
+    m_webView->SetPage(wxString::FromUTF8(html), "");
+}
+
+// ---------------------------------------------------------------------------
+// RefreshProjects (public)
+// ---------------------------------------------------------------------------
 
 void ProjectPanel::RefreshProjects() {
-    m_treeCtrl->DeleteAllItems();
-    m_activateBtn->Disable();
-    m_renameBtn->Disable();
-    m_deleteBtn->Disable();
-    m_newSubfolderBtn->Disable();
-    m_projectPathLabel->SetLabel("Select a project to see its path.");
-    m_statsLabel->SetLabel(wxEmptyString);
+    BuildTree();
+}
 
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::SetDarkMode(bool dark) {
+    m_state.darkMode = dark;
+    Render();
+}
+
+// ---------------------------------------------------------------------------
+// BuildTree — populate m_state.tree from filesystem, then Render
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::BuildTree() {
     AppConfig cfg = LoadConfig();
+
+    m_state.tree.clear();
+    m_state.hasFolder = !cfg.defaultFolder.empty();
+
     if (cfg.defaultFolder.empty()) {
-        m_projectPathLabel->SetLabel(
-            "No projects folder set. Click \"Set Projects Folder…\" to get started.");
-        CallAfter([this]() {
-            wxCommandEvent dummy;
-            OnSetFolderBtn(dummy);
-        });
+        m_state.folderMsg =
+            "No projects folder set. Click \"Set Folder\xe2\x80\xa6\" to get started.";
+        Render();
+        // Offer folder picker on first launch
+        if (!m_startupDone) {
+            m_startupDone = true;
+            CallAfter([this]() { HandleSetFolder(); });
+        }
         return;
     }
 
     if (!fs::exists(cfg.defaultFolder)) {
-        m_projectPathLabel->SetLabel(
+        m_state.folderMsg =
             "Projects folder not found: " + cfg.defaultFolder +
-            " — click \"Set Projects Folder…\" to choose a new one.");
+            " \xe2\x80\x94 click \"Set Folder\xe2\x80\xa6\" to choose a new one.";
+        Render();
+        m_startupDone = true;
         return;
     }
 
-    // Create a hidden root; all real content hangs off it.
-    wxTreeItemId root = m_treeCtrl->AddRoot("root");
-
-    std::string query = m_searchCtrl ? m_searchCtrl->GetValue().ToStdString() : "";
-    int sortOrder = m_sortChoice ? m_sortChoice->GetSelection() : 0;
-    bool anyAdded = PopulateTree(root, cfg.defaultFolder, 4, query, sortOrder);
-
-    // These buttons are usable once a root folder is configured.
-    m_newSubfolderBtn->Enable(true);
-    m_newProjectBtn->Enable(true);
+    bool anyAdded = PopulateEntries(m_state.tree, cfg.defaultFolder,
+                                    4, "", m_state.sortOrder);
 
     if (!anyAdded) {
-        m_projectPathLabel->SetLabel(query.empty()
-            ? "No projects found in this folder. Use \"New Subfolder…\" to organise, or create a project in the Create tab."
-            : "No projects match the current search.");
+        m_state.folderMsg =
+            "No projects found. Use \"New Subfolder\xe2\x80\xa6\" to organise, "
+            "or create a project in the Create tab.";
+    } else {
+        m_state.folderMsg = cfg.defaultFolder;
     }
 
-    // Try to re-select (and on first load, activate) the last-used project.
+    // Restore active project from app state
     AppState st = LoadAppState();
-    if (!st.currentProject.empty()) {
-        std::function<wxTreeItemId(wxTreeItemId)> findProject =
-            [&](wxTreeItemId node) -> wxTreeItemId {
-                wxTreeItemIdValue cookie;
-                wxTreeItemId child = m_treeCtrl->GetFirstChild(node, cookie);
-                while (child.IsOk()) {
-                    auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(child));
-                    if (tn && tn->kind == TreeNode::Kind::Project &&
-                        tn->path == st.currentProject) {
-                        return child;
-                    }
-                    wxTreeItemId found = findProject(child);
-                    if (found.IsOk()) return found;
-                    child = m_treeCtrl->GetNextChild(node, cookie);
-                }
-                return wxTreeItemId();
-            };
+    m_state.activePath = st.currentProject;
 
-        wxTreeItemId found = findProject(root);
-        if (found.IsOk()) {
-            m_treeCtrl->SelectItem(found);
-            m_treeCtrl->EnsureVisible(found);
+    Render();
 
-            // Only fire the activation callback once at startup, not on every
-            // sort/search/refresh call. This also prevents a second instance from
-            // auto-activating a different project that the first instance last used.
-            if (!m_startupDone) {
-                auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(found));
-                if (tn && m_openCallback) {
-                    std::string path = tn->path;
-                    CallAfter([this, path]() { m_openCallback(path); });
-                }
-            }
-        }
+    // Auto-activate last-used project on first load
+    if (!m_startupDone && !m_state.activePath.empty()) {
+        std::string path = m_state.activePath;
+        CallAfter([this, path]() {
+            if (m_openCallback) m_openCallback(path);
+        });
     }
     m_startupDone = true;
 }
 
-// ===========================================================================
-// Selection helpers
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// HandleActivate
+// ---------------------------------------------------------------------------
 
-TreeNode* ProjectPanel::SelectedNode() const {
-    wxTreeItemId sel = m_treeCtrl->GetSelection();
-    if (!sel.IsOk()) return nullptr;
-    return dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(sel));
+void ProjectPanel::HandleActivate(const std::string& path) {
+    if (path.empty()) return;
+
+    AppState st = LoadAppState();
+    st.currentProject = path;
+    SaveAppState(st);
+
+    m_state.activePath  = path;
+    m_state.selectedPath = path;
+
+    std::string name = fs::path(path).filename().string();
+    Logger::get().log("Activating project: " + name);
+    RecordOpen(path);
+
+    if (m_openCallback) m_openCallback(path);
+    Render();
 }
 
-// ===========================================================================
-// Event handlers — tree
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// HandleRename
+// ---------------------------------------------------------------------------
 
-void ProjectPanel::OnTreeSelChanged(wxTreeEvent&) {
-    TreeNode* tn = SelectedNode();
+void ProjectPanel::HandleRename(const std::string& path) {
+    if (path.empty()) return;
 
-    AppConfig cfg = LoadConfig();
-    bool hasFolder = !cfg.defaultFolder.empty();
-    m_newSubfolderBtn->Enable(hasFolder);
-    m_newProjectBtn->Enable(hasFolder);
-
-    if (!tn) {
-        m_activateBtn->Disable();
-        m_renameBtn->Disable();
-        m_deleteBtn->Disable();
-        m_projectPathLabel->SetLabel("Select a project to see its path.");
-        m_statsLabel->SetLabel(wxEmptyString);
-        return;
-    }
-
-    m_projectPathLabel->SetLabel(wxString::FromUTF8(tn->path));
-
-    if (tn->kind == TreeNode::Kind::Project) {
-        m_activateBtn->Enable();
-        m_renameBtn->Enable();
-        m_deleteBtn->Enable();
-        m_statsLabel->SetLabel(wxString::FromUTF8(buildStats(tn->path)));
-    } else {
-        m_activateBtn->Disable();
-        m_renameBtn->Enable();
-        m_deleteBtn->Disable();
-        m_statsLabel->SetLabel(wxEmptyString);
-    }
-    Layout();
-}
-
-void ProjectPanel::OnTreeItemActivated(wxTreeEvent&) {
-    TreeNode* tn = SelectedNode();
-    if (!tn) return;
-    if (tn->kind == TreeNode::Kind::Project)
-        ActivateSelectedProject();
-    else
-        m_treeCtrl->Toggle(m_treeCtrl->GetSelection());
-}
-
-void ProjectPanel::OnTreeExpanding(wxTreeEvent& evt) {
-    wxTreeItemId item = evt.GetItem();
-    auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(item));
-    if (tn) m_expandedPaths.insert(tn->path);
-}
-
-void ProjectPanel::OnTreeCollapsing(wxTreeEvent& evt) {
-    wxTreeItemId item = evt.GetItem();
-    auto* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(item));
-    if (tn) m_expandedPaths.erase(tn->path);
-}
-
-void ProjectPanel::OnTreeBeginDrag(wxTreeEvent& evt) {
-    // Only allow dragging project or folder nodes (not the hidden root).
-    TreeNode* tn = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(evt.GetItem()));
-    if (!tn) { evt.Veto(); return; }
-    m_dragItem = evt.GetItem();
-    evt.Allow();   // must call Allow() to start the drag
-}
-
-void ProjectPanel::OnTreeEndDrag(wxTreeEvent& evt) {
-    wxTreeItemId target = evt.GetItem();
-    if (!m_dragItem.IsOk() || !target.IsOk() || target == m_dragItem) {
-        m_dragItem = wxTreeItemId();
-        return;
-    }
-
-    auto* src = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(m_dragItem));
-    auto* dst = dynamic_cast<TreeNode*>(m_treeCtrl->GetItemData(target));
-    m_dragItem = wxTreeItemId();
-
-    if (!src || !dst) return;
-
-    // Only drop onto a folder node.
-    if (dst->kind != TreeNode::Kind::Folder) {
-        wxMessageBox("Drop onto a folder to move a project or subfolder into it.",
-                     "Move", wxOK | wxICON_INFORMATION, this);
-        return;
-    }
-
-    // Prevent moving a folder into one of its own descendants.
-    if (dst->path.rfind(src->path, 0) == 0 &&
-        (dst->path.size() == src->path.size() ||
-         dst->path[src->path.size()] == '/')) {
-        wxMessageBox("Cannot move a folder into itself or one of its subfolders.",
-                     "Move", wxOK | wxICON_WARNING, this);
-        return;
-    }
-
-    fs::path srcPath(src->path);
-    fs::path dstPath = fs::path(dst->path) / srcPath.filename();
-
-    if (fs::exists(dstPath)) {
-        wxMessageBox("A folder named \"" + srcPath.filename().string() +
-                     "\" already exists in \"" + dst->name + "\".",
-                     "Move", wxOK | wxICON_WARNING, this);
-        return;
-    }
-
-    std::error_code ec;
-    fs::rename(srcPath, dstPath, ec);
-    if (ec) {
-        wxMessageBox(wxString::FromUTF8("Could not move: " + ec.message()),
-                     "Move", wxOK | wxICON_ERROR, this);
-        return;
-    }
-
-    // Update expand tracking: old path → new path.
-    if (m_expandedPaths.erase(src->path))
-        m_expandedPaths.insert(dstPath.string());
-
-    // Keep the destination folder expanded so the moved item is visible.
-    m_expandedPaths.insert(dst->path);
-
-    Logger::get().log("Moved: " + src->path + " -> " + dstPath.string());
-    RefreshProjects();
-}
-
-// ===========================================================================
-// Event handlers — buttons
-// ===========================================================================
-
-void ProjectPanel::OnSearchChanged(wxCommandEvent&) {
-    RefreshProjects();
-}
-
-void ProjectPanel::OnSortChanged(wxCommandEvent&) {
-    RefreshProjects();
-}
-
-void ProjectPanel::OnActivateBtn(wxCommandEvent&) {
-    ActivateSelectedProject();
-}
-
-void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
-    TreeNode* tn = SelectedNode();
-    if (!tn) return;
-
-    std::string oldName = tn->name;
-    std::string oldPath = tn->path;
-    bool isProject = (tn->kind == TreeNode::Kind::Project);
-
+    bool isProject = ProjectExists(path);
+    std::string oldName = fs::path(path).filename().string();
     wxString title = isProject ? "Rename Project" : "Rename Folder";
+
     wxString entered = wxGetTextFromUser(
         "Enter a new name:", title,
         wxString::FromUTF8(oldName), this).Trim();
@@ -579,7 +387,7 @@ void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
         return;
     }
 
-    fs::path oldFsPath(oldPath);
+    fs::path oldFsPath(path);
     fs::path newFsPath = oldFsPath.parent_path() / newName;
     if (fs::exists(newFsPath)) {
         wxMessageBox("A folder with that name already exists.",
@@ -597,40 +405,44 @@ void ProjectPanel::OnRenameBtn(wxCommandEvent&) {
 
     if (isProject) {
         AppState st = LoadAppState();
-        if (st.currentProject == oldPath) {
+        if (st.currentProject == path) {
             st.currentProject = newFsPath.string();
             SaveAppState(st);
         }
     }
 
-    // Update expand-path set if the renamed path was tracked.
-    if (m_expandedPaths.erase(oldPath))
-        m_expandedPaths.insert(newFsPath.string());
+    if (m_state.expandedPaths.erase(path))
+        m_state.expandedPaths.insert(newFsPath.string());
+    if (m_state.activePath  == path) m_state.activePath  = newFsPath.string();
+    if (m_state.selectedPath == path) m_state.selectedPath = newFsPath.string();
 
-    Logger::get().log("Renamed: " + oldPath + " -> " + newFsPath.string());
-    RefreshProjects();
+    Logger::get().log("Renamed: " + path + " -> " + newFsPath.string());
+    BuildTree();
 }
 
-void ProjectPanel::OnDeleteBtn(wxCommandEvent&) {
-    TreeNode* tn = SelectedNode();
-    if (!tn || tn->kind != TreeNode::Kind::Project) return;
+// ---------------------------------------------------------------------------
+// HandleDelete
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::HandleDelete(const std::string& path) {
+    if (!ProjectExists(path)) return;
 
     AppConfig cfg = LoadConfig();
-    if (!IsProjectDeletable(tn->path, cfg.defaultFolder)) {
+    if (!IsProjectDeletable(path, cfg.defaultFolder)) {
         wxMessageBox("This project cannot be deleted — it is outside the projects folder.",
                      "Delete Project", wxOK | wxICON_WARNING, this);
         return;
     }
 
+    std::string name = fs::path(path).filename().string();
     wxString msg = wxString::FromUTF8(
-        "Permanently delete \"" + tn->name + "\" and all its files?\n\n"
-        "This cannot be undone.");
+        "Permanently delete \"" + name + "\" and all its files?\n\nThis cannot be undone.");
     if (wxMessageBox(msg, "Delete Project",
                      wxYES_NO | wxNO_DEFAULT | wxICON_WARNING, this) != wxYES)
         return;
 
     std::error_code ec;
-    fs::remove_all(fs::path(tn->path), ec);
+    fs::remove_all(fs::path(path), ec);
     if (ec) {
         wxMessageBox(wxString::FromUTF8("Could not delete: " + ec.message()),
                      "Delete Project", wxOK | wxICON_ERROR, this);
@@ -638,35 +450,35 @@ void ProjectPanel::OnDeleteBtn(wxCommandEvent&) {
     }
 
     AppState st = LoadAppState();
-    bool wasActive = (st.currentProject == tn->path);
+    bool wasActive = (st.currentProject == path);
     if (wasActive) {
         st.currentProject = "";
         SaveAppState(st);
+        m_state.activePath = "";
         if (m_openCallback) m_openCallback("");
     }
+    if (m_state.selectedPath == path) m_state.selectedPath = "";
 
-    Logger::get().log("Deleted project: " + tn->path);
-    RefreshProjects();
+    Logger::get().log("Deleted project: " + path);
+    BuildTree();
 }
 
-void ProjectPanel::OnNewProjectBtn(wxCommandEvent&) {
+// ---------------------------------------------------------------------------
+// HandleNewProject
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::HandleNewProject(const std::string& parentPath) {
     AppConfig cfg = LoadConfig();
     if (cfg.defaultFolder.empty()) {
-        wxMessageBox("No projects folder is set. Click \"Set Projects Folder…\" first.",
+        wxMessageBox("No projects folder is set. Click \"Set Folder\xe2\x80\xa6\" first.",
                      "New Project", wxOK | wxICON_WARNING, this);
         return;
     }
 
-    // Determine parent: selected folder → inside it, otherwise root.
-    std::string parentPath;
-    TreeNode* tn = SelectedNode();
-    if (tn && tn->kind == TreeNode::Kind::Folder)
-        parentPath = tn->path;
-    else
-        parentPath = cfg.defaultFolder;
+    std::string parent = parentPath.empty() ? cfg.defaultFolder : parentPath;
 
     wxString entered = wxGetTextFromUser(
-        wxString::FromUTF8("Enter a name for the new project.\nWill be created in: " + parentPath),
+        wxString::FromUTF8("Enter a name for the new project.\nWill be created in: " + parent),
         "New Project", wxEmptyString, this).Trim();
     if (entered.empty()) return;
 
@@ -677,45 +489,41 @@ void ProjectPanel::OnNewProjectBtn(wxCommandEvent&) {
         return;
     }
 
-    if (fs::exists(fs::path(parentPath) / name)) {
+    if (fs::exists(fs::path(parent) / name)) {
         wxMessageBox("A folder with that name already exists.",
                      "New Project", wxOK | wxICON_WARNING, this);
         return;
     }
 
-    if (!CreateProject(parentPath, name)) {
-        wxMessageBox("Could not create project in:\n" + parentPath,
+    if (!CreateProject(parent, name)) {
+        wxMessageBox("Could not create project in:\n" + parent,
                      "New Project", wxOK | wxICON_ERROR, this);
         return;
     }
 
-    m_expandedPaths.insert(parentPath);
-    Logger::get().log("Created project: " + (fs::path(parentPath) / name).string());
-    RefreshProjects();
+    m_state.expandedPaths.insert(parent);
+    Logger::get().log("Created project: " + (fs::path(parent) / name).string());
+    BuildTree();
 }
 
-void ProjectPanel::OnNewSubfolder(wxCommandEvent&) {
-    // Determine where to create the subfolder.
-    // Selected folder → inside it.  Anything else → root projects folder.
-    std::string parentPath;
-    TreeNode* tn = SelectedNode();
-    if (tn && tn->kind == TreeNode::Kind::Folder) {
-        parentPath = tn->path;
-    } else {
-        AppConfig cfg = LoadConfig();
-        parentPath = cfg.defaultFolder;
-    }
+// ---------------------------------------------------------------------------
+// HandleNewSubfolder
+// ---------------------------------------------------------------------------
 
-    if (parentPath.empty()) {
+void ProjectPanel::HandleNewSubfolder(const std::string& parentPath) {
+    AppConfig cfg = LoadConfig();
+    std::string parent = parentPath.empty() ? cfg.defaultFolder : parentPath;
+
+    if (parent.empty()) {
         wxMessageBox("No projects folder is set.", "New Subfolder",
                      wxOK | wxICON_WARNING, this);
         return;
     }
 
     wxString prompt = wxString::FromUTF8(
-        "Enter a name for the new subfolder.\nWill be created in: " + parentPath);
-    wxString entered = wxGetTextFromUser(prompt, "New Subfolder",
-                                         wxEmptyString, this).Trim();
+        "Enter a name for the new subfolder.\nWill be created in: " + parent);
+    wxString entered = wxGetTextFromUser(
+        prompt, "New Subfolder", wxEmptyString, this).Trim();
     if (entered.empty()) return;
 
     std::string folderName = entered.ToStdString();
@@ -725,7 +533,7 @@ void ProjectPanel::OnNewSubfolder(wxCommandEvent&) {
         return;
     }
 
-    fs::path newDir = fs::path(parentPath) / folderName;
+    fs::path newDir = fs::path(parent) / folderName;
     if (fs::exists(newDir)) {
         wxMessageBox("A folder with that name already exists.",
                      "New Subfolder", wxOK | wxICON_WARNING, this);
@@ -740,17 +548,16 @@ void ProjectPanel::OnNewSubfolder(wxCommandEvent&) {
         return;
     }
 
-    // Keep the parent expanded so the new folder is immediately visible.
-    m_expandedPaths.insert(parentPath);
+    m_state.expandedPaths.insert(parent);
     Logger::get().log("Created subfolder: " + newDir.string());
-    RefreshProjects();
+    BuildTree();
 }
 
-void ProjectPanel::OnRefreshBtn(wxCommandEvent&) {
-    RefreshProjects();
-}
+// ---------------------------------------------------------------------------
+// HandleSetFolder
+// ---------------------------------------------------------------------------
 
-void ProjectPanel::OnSetFolderBtn(wxCommandEvent&) {
+void ProjectPanel::HandleSetFolder() {
     AppConfig current = LoadConfig();
     wxString defaultPath = current.defaultFolder.empty()
         ? wxString(getenv("HOME") ?: "")
@@ -764,7 +571,7 @@ void ProjectPanel::OnSetFolderBtn(wxCommandEvent&) {
 
     const char* home = getenv("HOME");
     if (!home) return;
-    std::string configDir = std::string(home) + "/.config/test-taker";
+    std::string configDir  = std::string(home) + "/.config/test-taker";
     std::string configPath = configDir + "/config";
 
     fs::create_directories(configDir);
@@ -779,7 +586,6 @@ void ProjectPanel::OnSetFolderBtn(wxCommandEvent&) {
         }
     }
 
-    // Strip any existing defaultFolder line and rewrite.
     std::string updated;
     std::istringstream ss(existing);
     std::string line;
@@ -803,27 +609,85 @@ void ProjectPanel::OnSetFolderBtn(wxCommandEvent&) {
     }
 
     Logger::get().log("Set defaultFolder to: " + chosen);
-    RefreshProjects();
+    BuildTree();
 }
 
-// ===========================================================================
-// ActivateSelectedProject
-// ===========================================================================
+// ---------------------------------------------------------------------------
+// HandleMove
+// ---------------------------------------------------------------------------
 
-void ProjectPanel::ActivateSelectedProject() {
-    TreeNode* tn = SelectedNode();
-    if (!tn || tn->kind != TreeNode::Kind::Project) return;
+void ProjectPanel::HandleMove(const std::string& src, const std::string& dst) {
+    if (src.empty() || dst.empty() || src == dst) return;
 
-    std::string projectName = tn->name;
-    std::string projectPath = tn->path;
+    // Only drop onto a folder node
+    if (ProjectExists(dst)) {
+        wxMessageBox("Drop onto a folder to move a project or subfolder into it.",
+                     "Move", wxOK | wxICON_INFORMATION, this);
+        return;
+    }
 
-    AppState st = LoadAppState();
-    st.currentProject = projectPath;
-    SaveAppState(st);
+    // Prevent moving a folder into one of its own descendants
+    if (dst.rfind(src, 0) == 0 &&
+        (dst.size() == src.size() || dst[src.size()] == '/')) {
+        wxMessageBox("Cannot move a folder into itself or one of its subfolders.",
+                     "Move", wxOK | wxICON_WARNING, this);
+        return;
+    }
 
-    Logger::get().log("Activating project: " + projectName);
-    RecordOpen(projectPath);
+    fs::path srcPath(src);
+    fs::path dstPath = fs::path(dst) / srcPath.filename();
 
-    if (m_openCallback)
-        m_openCallback(projectPath);
+    if (fs::exists(dstPath)) {
+        wxMessageBox("A folder named \"" + srcPath.filename().string() +
+                     "\" already exists in the destination.",
+                     "Move", wxOK | wxICON_WARNING, this);
+        return;
+    }
+
+    std::error_code ec;
+    fs::rename(srcPath, dstPath, ec);
+    if (ec) {
+        wxMessageBox(wxString::FromUTF8("Could not move: " + ec.message()),
+                     "Move", wxOK | wxICON_ERROR, this);
+        return;
+    }
+
+    if (m_state.expandedPaths.erase(src))
+        m_state.expandedPaths.insert(dstPath.string());
+    m_state.expandedPaths.insert(dst);
+
+    if (m_state.activePath  == src) m_state.activePath  = dstPath.string();
+    if (m_state.selectedPath == src) m_state.selectedPath = dstPath.string();
+
+    Logger::get().log("Moved: " + src + " -> " + dstPath.string());
+    BuildTree();
+}
+
+// ---------------------------------------------------------------------------
+// HandleSort
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::HandleSort(const std::string& order) {
+    m_state.sortOrder = order;
+    BuildTree();
+}
+
+// ---------------------------------------------------------------------------
+// OnPpAction — dispatch incoming JS messages
+// ---------------------------------------------------------------------------
+
+void ProjectPanel::OnPpAction(wxWebViewEvent& evt) {
+    std::string payload = evt.GetString().ToStdString();
+    std::string action  = ppJsonField(payload, "action");
+
+    if      (action == "activate")     HandleActivate(ppJsonField(payload, "path"));
+    else if (action == "rename")       HandleRename(ppJsonField(payload, "path"));
+    else if (action == "delete")       HandleDelete(ppJsonField(payload, "path"));
+    else if (action == "newProject")   HandleNewProject(ppJsonField(payload, "parentPath"));
+    else if (action == "newSubfolder") HandleNewSubfolder(ppJsonField(payload, "parentPath"));
+    else if (action == "setFolder")    HandleSetFolder();
+    else if (action == "move")         HandleMove(ppJsonField(payload, "src"),
+                                                  ppJsonField(payload, "dst"));
+    else if (action == "sort")         HandleSort(ppJsonField(payload, "order"));
+    else if (action == "refresh")      BuildTree();
 }

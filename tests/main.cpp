@@ -28,6 +28,7 @@ int test_saved_convos();
 int test_game_data();
 int test_chat_panel();
 int test_new_session_html();
+int test_project_panel_html();
 
 int main() {
     int failures = 0;
@@ -56,6 +57,7 @@ int main() {
     failures += test_game_data();
     failures += test_chat_panel();
     failures += test_new_session_html();
+    failures += test_project_panel_html();
     std::cout << (failures == 0 ? "ALL PASSED" : "FAILED") << "\n";
     return failures > 0 ? 1 : 0;
 }

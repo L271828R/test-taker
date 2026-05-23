@@ -135,6 +135,7 @@ set(SOURCES
     src/focus_list_panel.cpp
     src/personality_lib.cpp
     src/new_session_html.cpp
+    src/project_panel_html.cpp
     src/saved_convos.cpp
     src/saved_panel.cpp
     src/game_data.cpp
@@ -173,6 +174,8 @@ add_executable(test_test-taker
     tests/test_game_data.cpp
     tests/test_chat_panel.cpp
     tests/test_new_session_html.cpp
+    tests/test_project_panel_html.cpp
+    src/project_panel_html.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp

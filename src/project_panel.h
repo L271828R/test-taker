@@ -1,23 +1,11 @@
 #pragma once
-#include <wx/panel.h>
-#include <wx/treectrl.h>
-#include <wx/stattext.h>
-#include <wx/textctrl.h>
-#include <wx/choice.h>
-#include <wx/button.h>
 #include <functional>
 #include <set>
 #include <string>
-
-// ---------------------------------------------------------------------------
-// Data attached to every node in the project tree.
-// ---------------------------------------------------------------------------
-struct TreeNode : public wxTreeItemData {
-    enum class Kind { Folder, Project };
-    Kind        kind;
-    std::string path;   // absolute filesystem path
-    std::string name;   // display name (folder or project name)
-};
+#include <wx/wx.h>
+#include <wx/webview.h>
+#include <wx/app.h>
+#include "project_panel_html.h"
 
 class ProjectPanel : public wxPanel {
 public:
@@ -26,59 +14,26 @@ public:
     ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated);
 
     void RefreshProjects();
+    void SetDarkMode(bool dark);
 
 private:
-    // ---- tree helpers -------------------------------------------------------
-    // Populate children of parentId from dirPath up to depth levels.
-    // query is the current search string (empty = show all).
-    // Returns true when at least one project node was added (used for
-    // filtering: a folder that contributes nothing is not added).
-    bool PopulateTree(wxTreeItemId parentId,
-                      const std::string& dirPath,
-                      int depth,
-                      const std::string& query,
-                      int sortOrder);   // 0=Name 1=Created 2=Modified
+    OpenCallback        m_openCallback;
+    wxWebView*          m_webView     = nullptr;
+    ProjectPanelState   m_state;
+    bool                m_startupDone = false;
 
-    // ---- selection / activation ---------------------------------------------
-    TreeNode* SelectedNode() const;
-    void ActivateSelectedProject();
+    void Render();
+    void BuildTree();   // populates m_state.tree from filesystem, calls Render()
 
-    // ---- event handlers -----------------------------------------------------
-    void OnSearchChanged(wxCommandEvent& evt);
-    void OnSortChanged(wxCommandEvent& evt);
-    void OnActivateBtn(wxCommandEvent& evt);
-    void OnRenameBtn(wxCommandEvent& evt);
-    void OnNewProjectBtn(wxCommandEvent& evt);
-    void OnNewSubfolder(wxCommandEvent& evt);
-    void OnRefreshBtn(wxCommandEvent& evt);
-    void OnSetFolderBtn(wxCommandEvent& evt);
+    void HandleActivate(const std::string& path);
+    void HandleRename(const std::string& path);
+    void HandleDelete(const std::string& path);
+    void HandleNewProject(const std::string& parentPath);
+    void HandleNewSubfolder(const std::string& parentPath);
+    void HandleSetFolder();
+    void HandleMove(const std::string& src, const std::string& dst);
+    void HandleSort(const std::string& order);
 
-    void OnDeleteBtn(wxCommandEvent& evt);
-    void OnTreeSelChanged(wxTreeEvent& evt);
-    void OnTreeItemActivated(wxTreeEvent& evt);
-    void OnTreeExpanding(wxTreeEvent& evt);
-    void OnTreeCollapsing(wxTreeEvent& evt);
-    void OnTreeBeginDrag(wxTreeEvent& evt);
-    void OnTreeEndDrag(wxTreeEvent& evt);
-
-    // ---- widgets ------------------------------------------------------------
-    wxTextCtrl*   m_searchCtrl;
-    wxChoice*     m_sortChoice;
-    wxTreeCtrl*   m_treeCtrl;
-    wxStaticText* m_projectPathLabel;
-    wxStaticText* m_statsLabel;
-    wxButton*     m_activateBtn;
-    wxButton*     m_renameBtn;
-    wxButton*     m_deleteBtn;
-    wxButton*     m_newProjectBtn;
-    wxButton*     m_newSubfolderBtn;
-    wxButton*     m_setFolderBtn;
-
-    // ---- state --------------------------------------------------------------
-    std::set<std::string> m_expandedPaths;   // paths whose folder nodes are expanded
-    wxTreeItemId          m_dragItem;        // item being dragged
-    OpenCallback          m_openCallback;
-    bool                  m_startupDone = false; // auto-activate fires only once at startup
-
+    void OnPpAction(wxWebViewEvent&);
     wxDECLARE_EVENT_TABLE();
 };
