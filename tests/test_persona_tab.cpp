@@ -112,5 +112,60 @@ int test_persona_tab() {
         }
     }
 
+    // ── [persona-tab-html-flush-descs] ───────────────────────────────────────
+    // C++ calls flushDescs() via RunScript when the notebook leaves this tab.
+    // onblur on textarea is unreliable when focus moves to native wx controls.
+    {
+        std::string html = BuildPersonaTabHTML(false);
+        bool hasFn        = contains(html, "function flushDescs");
+        bool hasClear     = contains(html, "clearTimeout(_descTimers[name])");
+        bool callsSaveDesc = contains(html, "saveDesc(name,");
+        if (!hasFn || !hasClear || !callsSaveDesc) {
+            std::cerr << "FAIL [persona-tab-html-flush-descs]:"
+                      << " hasFn=" << hasFn
+                      << " hasClear=" << hasClear
+                      << " callsSaveDesc=" << callsSaveDesc << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-tab-html-flush-descs]\n";
+        }
+    }
+
+    // ── [persona-tab-html-save-desc-action] ──────────────────────────────────
+    // saveDesc must send action:'setDesc' with name and description fields so
+    // C++ HandleMessage can dispatch to DoSetDesc and persist via wxConfig.
+    {
+        std::string html = BuildPersonaTabHTML(false);
+        bool hasAction = contains(html, "action:'setDesc'");
+        bool hasName   = contains(html, "name:name");
+        bool hasDesc   = contains(html, "description:desc");
+        if (!hasAction || !hasName || !hasDesc) {
+            std::cerr << "FAIL [persona-tab-html-save-desc-action]:"
+                      << " hasAction=" << hasAction
+                      << " hasName=" << hasName
+                      << " hasDesc=" << hasDesc << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-tab-html-save-desc-action]\n";
+        }
+    }
+
+    // ── [persona-tab-html-schedule-desc] ─────────────────────────────────────
+    // scheduleDesc must update _descs[name] immediately (in-memory) so
+    // flushDescs can read the latest value even if the timer hasn't fired.
+    {
+        std::string html = BuildPersonaTabHTML(false);
+        bool updatesDescs = contains(html, "_descs[name] = desc");
+        bool setsTimer    = contains(html, "_descTimers[name] = setTimeout");
+        if (!updatesDescs || !setsTimer) {
+            std::cerr << "FAIL [persona-tab-html-schedule-desc]:"
+                      << " updatesDescs=" << updatesDescs
+                      << " setsTimer=" << setsTimer << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [persona-tab-html-schedule-desc]\n";
+        }
+    }
+
     return failures;
 }

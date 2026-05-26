@@ -355,6 +355,14 @@ function saveDesc(name, desc) {
   _descs[name] = desc;
   send({action:'setDesc', name:name, description:desc});
 }
+function flushDescs() {
+  Object.keys(_descTimers).forEach(function(name) {
+    clearTimeout(_descTimers[name]);
+    delete _descTimers[name];
+    saveDesc(name, _descs[name] || '');
+  });
+}
+window.addEventListener('blur', flushDescs);
 function uploadImg(name) {
   send({action:'uploadImage', name:name});
 }

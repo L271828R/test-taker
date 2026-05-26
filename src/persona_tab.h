@@ -16,6 +16,7 @@ public:
 
     void SetDarkMode(bool dark);
     void Activate();
+    void FlushPendingDescs();
 
     void SetOnRenamePersona(RenameCallback cb) { m_onRename = std::move(cb); }
 

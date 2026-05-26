@@ -133,7 +133,10 @@ AppFrame::AppFrame()
 
 // ---------------------------------------------------------------------------
 void AppFrame::OnTabChanged(wxBookCtrlEvent& evt) {
+    int old = evt.GetOldSelection();
     int sel = evt.GetSelection();
+    if (old == TAB_PERSONAS)
+        m_personaPage->FlushPendingDescs();
     if (sel == TAB_PERSONAS)
         m_personaPage->Activate();
     else if (sel == TAB_NEW_SESSION)

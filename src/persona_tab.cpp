@@ -2,6 +2,7 @@
 #include "persona_tab_html.h"
 #include "persona.h"
 #include "personality_lib.h"
+#include "logger.h"
 #include <algorithm>
 #include <cstdio>
 #include <sstream>
@@ -105,6 +106,11 @@ void PersonaTab::Activate() {
     else         m_pendingActivate = true;
 }
 
+void PersonaTab::FlushPendingDescs() {
+    Logger::get().log("PersonaTab::FlushPendingDescs  ready=" + std::to_string(m_ready));
+    Run("flushDescs()");
+}
+
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 void PersonaTab::LoadState() {
@@ -173,11 +179,11 @@ void PersonaTab::SaveState() const {
     cfg.Write("checked", cs);
 
     cfg.DeleteGroup("/charlib_descriptions");
-    wxConfig dcfg("TestTaker");
-    dcfg.SetPath("/charlib_descriptions");
+    cfg.SetPath("/charlib_descriptions");
+    Logger::get().log("PersonaTab::SaveState  descs=" + std::to_string(m_personaDescs.size()));
     for (auto& [name, desc] : m_personaDescs) {
         if (!desc.empty())
-            dcfg.Write(wxString::FromUTF8(name), wxString::FromUTF8(desc));
+            cfg.Write(wxString::FromUTF8(name), wxString::FromUTF8(desc));
     }
 }
 
@@ -231,6 +237,7 @@ void PersonaTab::PushState() {
 
 void PersonaTab::HandleMessage(const std::string& json) {
     std::string action = PtField(json, "action");
+    Logger::get().log("PersonaTab::HandleMessage  action=" + action);
     if      (action == "ready")           { m_ready = true; if (m_pendingActivate) { m_pendingActivate = false; PushState(); } }
     else if (action == "toggle")          DoToggle(PtField(json,"name"), PtBool(json,"checked"));
     else if (action == "setDesc")         DoSetDesc(PtField(json,"name"), PtField(json,"description"));
@@ -252,6 +259,7 @@ void PersonaTab::DoToggle(const std::string& name, bool checked) {
 
 void PersonaTab::DoSetDesc(const std::string& name, const std::string& desc) {
     if (name.empty()) return;
+    Logger::get().log("PersonaTab::DoSetDesc  name=" + name + "  len=" + std::to_string(desc.size()));
     if (desc.empty()) m_personaDescs.erase(name);
     else              m_personaDescs[name] = desc;
     SaveState();
