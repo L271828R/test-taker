@@ -982,6 +982,26 @@ int test_exam_prompt() {
         }
     }
 
+    // Personality dropdowns must use click-based .open class, not CSS :hover.
+    // CSS :hover on <div> is unreliable in macOS WKWebView.
+    {
+        QuestionTurn t;
+        t.question    = "What is IAM?";
+        t.userAnswer  = "Identity and Access Management";
+        t.score       = Score::Star5;
+        t.explanation = "IAM manages AWS users and permissions.";
+        std::string html = RenderExamTurns({t}, {0}, {}, {});
+        bool hasOpen  = html.find(".game-drop.open .game-menu") != std::string::npos;
+        bool noHover  = html.find(".game-drop:hover") == std::string::npos;
+        if (!hasOpen || !noHover) {
+            std::cerr << "FAIL [dropdown-open-class]: hasOpen=" << hasOpen
+                      << " noHover=" << noHover << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [dropdown-open-class]\n";
+        }
+    }
+
     // Mermaid hint must include quoted-label guidance so the LLM doesn't emit
     // unquoted node labels with { } or // that break the Mermaid parser.
     {

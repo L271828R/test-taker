@@ -515,6 +515,40 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 @keyframes turnIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 .turn:last-child{animation:turnIn 0.4s cubic-bezier(0.16,1,0.3,1);}
 </style>
+<script>
+(function() {
+  function closeAll() {
+    document.querySelectorAll('.game-drop.open').forEach(function(d) {
+      d.classList.remove('open');
+    });
+  }
+  document.addEventListener('click', function(e) {
+    var trigger = e.target.closest('.game-drop > span');
+    if (trigger) {
+      var drop = trigger.parentElement;
+      var wasOpen = drop.classList.contains('open');
+      closeAll();
+      if (!wasOpen) drop.classList.add('open');
+      return;
+    }
+    closeAll();
+  });
+  // Sub-menu flyouts use mouseover (they're inside an already-open menu)
+  document.addEventListener('mouseover', function(e) {
+    var label = e.target.closest('.sub-label');
+    if (!label) return;
+    var wrap = label.parentElement;
+    wrap.parentElement.querySelectorAll('.sub-wrap.sub-open').forEach(function(d) {
+      if (d !== wrap) d.classList.remove('sub-open');
+    });
+    wrap.classList.add('sub-open');
+  });
+  document.addEventListener('mouseout', function(e) {
+    var wrap = e.target.closest('.sub-wrap');
+    if (wrap && !wrap.contains(e.relatedTarget)) wrap.classList.remove('sub-open');
+  });
+})();
+</script>
 )";
 
     auto makeSnippet = [](const std::string& q) -> std::string {
