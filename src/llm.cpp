@@ -87,7 +87,7 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
     if (cfg.backend == LLMBackend::ClaudeP) {
         // Use login shell so ~/.nvm, Homebrew, etc. are on PATH.
         std::string inner = "claude -p < " + shell_quote(tmpFile);
-        std::string cmd = "bash -l -c " + shell_quote(inner) + " 2>&1";
+        std::string cmd = BuildLoginShellCmd(inner);
         result = run_shell(cmd);
         if (!result.ok && result.text.find("not found") != std::string::npos)
             result.error = "claude CLI not found — check PATH or use Clipboard mode";
@@ -98,7 +98,7 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
             "codex --ask-for-approval never exec --sandbox read-only "
             "--skip-git-repo-check --output-last-message " + shell_quote(outFile) +
             " - < " + shell_quote(tmpFile);
-        std::string cmd = "bash -l -c " + shell_quote(inner) + " 2>&1";
+        std::string cmd = BuildLoginShellCmd(inner);
         auto raw = run_shell(cmd);
         if (!raw.ok) {
             fs::remove(outFile);
@@ -119,7 +119,7 @@ LLMResult InvokeLLM(const std::string& prompt, const LLMConfig& cfg) {
     }
     else if (cfg.backend == LLMBackend::GeminiCLI) {
         std::string inner = "gemini -p < " + shell_quote(tmpFile);
-        std::string cmd = "bash -l -c " + shell_quote(inner) + " 2>&1";
+        std::string cmd = BuildLoginShellCmd(inner);
         result = run_shell(cmd);
         if (!result.ok && result.text.find("not found") != std::string::npos)
             result.error = "gemini CLI not found — check PATH or use Clipboard mode";

@@ -1,4 +1,5 @@
 #include "llm_error.h"
+#include "llm.h"
 #include <iostream>
 #include <string>
 
@@ -25,6 +26,21 @@ int test_llm_error() {
             ++failures;
         } else {
             std::cout << "PASS [llm-error-empty-output]\n";
+        }
+    }
+
+    // BuildLoginShellCmd must cd to $HOME before invoking bash -l so that
+    // a deleted CWD (getcwd failure) doesn't abort shell initialisation.
+    {
+        std::string cmd = BuildLoginShellCmd("echo hi");
+        bool hasHomeCd  = cmd.find("cd \"$HOME\"") != std::string::npos;
+        bool hasBashL   = cmd.find("bash -l -c") != std::string::npos;
+        bool hasRedirect = cmd.find("2>&1") != std::string::npos;
+        if (!hasHomeCd || !hasBashL || !hasRedirect) {
+            std::cerr << "FAIL [llm-shell-cmd-cwd]: cmd='" << cmd << "'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [llm-shell-cmd-cwd]\n";
         }
     }
 

@@ -222,7 +222,7 @@ static std::string BuildDifficultySelect(const std::string& current) {
 
 // Build backend <select>
 static std::string BuildBackendSelect(const std::string& current) {
-    const char* opts[] = {"claude -p", "Anthropic API", "Ollama (local)", "Clipboard (manual)"};
+    const char* opts[] = {"claude -p", "Codex CLI", "Gemini CLI", "Anthropic API", "Ollama (local)", "Clipboard (manual)"};
     std::string out = "<select id='ns-backend' onchange='nsUpdateBackend()'>";
     for (auto* o : opts) {
         out += std::string("<option value='") + EscapeHTML(o) + "'";
