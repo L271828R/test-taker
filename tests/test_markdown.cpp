@@ -95,5 +95,40 @@ int test_markdown() {
         }
     }
 
+    // ```graph block with a single expression renders a desmos-graph div.
+    {
+        std::string md = "```graph\nx^{2}\n```\n";
+        std::string html = RenderMarkdown(md);
+        bool hasDiv   = html.find("class=\"math-graph\"") != std::string::npos;
+        bool hasExprs = html.find("data-exprs=") != std::string::npos;
+        bool hasExpr  = html.find("x^{2}") != std::string::npos;
+        bool noPre    = html.find("<pre>") == std::string::npos;
+        if (!hasDiv || !hasExprs || !hasExpr || !noPre) {
+            std::cerr << "FAIL [graph-block-basic]: div=" << hasDiv
+                      << " exprs=" << hasExprs << " expr=" << hasExpr
+                      << " noPre=" << noPre << "\n  html: " << html << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-block-basic]\n";
+        }
+    }
+
+    // ```graph block with multiple expressions includes all of them.
+    {
+        std::string md = "```graph\nx^{2}\nx^{-3}\n```\n";
+        std::string html = RenderMarkdown(md);
+        bool hasDiv  = html.find("class=\"math-graph\"") != std::string::npos;
+        bool hasF1   = html.find("x^{2}") != std::string::npos;
+        bool hasF2   = html.find("x^{-3}") != std::string::npos;
+        if (!hasDiv || !hasF1 || !hasF2) {
+            std::cerr << "FAIL [graph-block-multi]: div=" << hasDiv
+                      << " f1=" << hasF1 << " f2=" << hasF2
+                      << "\n  html: " << html << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-block-multi]\n";
+        }
+    }
+
     return failures;
 }

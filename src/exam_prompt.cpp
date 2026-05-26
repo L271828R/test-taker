@@ -295,6 +295,13 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
           " A[enum Color { RED }]. Keep labels short. Use only graph TD or LR."
         : "";
 
+    // Graph hint — only for large models; renders interactive Plotly charts.
+    const std::string graphHint = cfg.largeModel
+        ? " If plotting one or more mathematical functions would aid understanding,"
+          " add a ```graph``` fenced block with one LaTeX-style expression per line"
+          " (e.g. x^{2} or \\sin(x) or x^{-3}). Multiple lines plot as separate curves."
+        : "";
+
     // Pick one personality at random and bake it into the instruction.
     // Giving the LLM a list and asking it to "pick one" causes it to always
     // Pick up to tidbitCount distinct personalities for this turn.
@@ -339,7 +346,7 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
 
         out << "Respond with exactly two sections:\n\n"
                "EXPLANATION: <explain the correct answer in 2-5 sentences. Begin directly with the answer."
-            << mermaidHint << tidbitInstruction << ">\n";
+            << mermaidHint << graphHint << tidbitInstruction << ">\n";
         if (questionsRemaining > 0) {
             out << "NEXT_QUESTION: <next question text only>\n\n"
                    "Output format (exactly):\n"
@@ -365,7 +372,7 @@ std::string BuildScoringAndNextPrompt(const ExamConfig& cfg,
                "   4 = mostly right with minor gaps, 5 = fully right\n"
                "2. Explain the answer:     EXPLANATION: <state the correct answer and explain it in 3-6 sentences."
                " Include a concrete example when helpful. Do not mention the user, their answer, or lack of answer. Begin directly with the correct answer."
-            << mermaidHint << tidbitInstruction << ">\n";
+            << mermaidHint << graphHint << tidbitInstruction << ">\n";
 
         if (questionsRemaining > 0) {
             out << "3. Ask the next question:  NEXT_QUESTION: <question text only>\n\n"
@@ -816,6 +823,7 @@ std::string BuildLearnMorePrompt(const std::string& question,
         << "- Explain the underlying concept in depth (5-10 sentences).\n"
         << "- Include at least one concrete, practical example.\n"
         << "- If a diagram would help understanding, add a ```mermaid``` fenced code block.\n"
+        << "- If plotting a function would help, add a ```graph``` fenced block — one LaTeX expression per line (e.g. x^{2} or \\sin(x)).\n"
         << "- If the topic involves code, include a short illustrative ```code``` fenced block.\n"
         << "- Use plain markdown (headers, bullets, fenced blocks are fine). No preamble, no sign-off.\n";
     return out.str();

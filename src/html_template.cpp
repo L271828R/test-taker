@@ -7,6 +7,7 @@
 #include "hljs_js.h"
 #include "hljs_css_light.h"
 #include "hljs_css_dark.h"
+#include "plotly_js.h"
 #include <cstdio>
 #include <string>
 
@@ -29,6 +30,21 @@ static const std::string& GetHighlightJS() {
     static std::string cached;
     if (cached.empty()) {
         cached.assign(reinterpret_cast<const char*>(hljs_js_data), hljs_js_data_len);
+        const std::string bad  = "</script>";
+        const std::string safe = "<\\/script>";
+        size_t pos = 0;
+        while ((pos = cached.find(bad, pos)) != std::string::npos) {
+            cached.replace(pos, bad.size(), safe);
+            pos += safe.size();
+        }
+    }
+    return cached;
+}
+
+static const std::string& GetPlotlyJS() {
+    static std::string cached;
+    if (cached.empty()) {
+        cached.assign(reinterpret_cast<const char*>(plotly_js_data), plotly_js_data_len);
         const std::string bad  = "</script>";
         const std::string safe = "<\\/script>";
         size_t pos = 0;
@@ -72,6 +88,7 @@ std::string BuildHTML(const std::string& body,
 <title>)HTML" + EscapeHTML(title) + R"HTML(</title>
 <script>)HTML" + GetMermaidJS() + R"HTML(</script>
 <script>)HTML" + GetHighlightJS() + R"HTML(</script>
+<script>)HTML" + GetPlotlyJS() + R"HTML(</script>
 <style>)HTML" + (darkMode ? GetHighlightCSSDark() : GetHighlightCSSLight()) + R"HTML(</style>
 <style>
 /* ── Theme tokens ───────────────────────────────────────────────────────── */
@@ -556,6 +573,53 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.fontSizeChange)
       window.webkit.messageHandlers.fontSizeChange.postMessage(String(pct));
   }, {passive:false});
+})();
+
+// ── Math graphs (Plotly) ─────────────────────────────────────────────────
+(function() {
+  if (typeof Plotly === 'undefined') return;
+  var COLORS = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b'];
+  function toJS(expr) {
+    return expr.trim()
+      .replace(/\^{([^}]*)}/g, '**($1)')
+      .replace(/\^(-?[0-9.]+)/g, '**($1)')
+      .replace(/\\frac{([^}]*)}{([^}]*)}/g, '(($1)/($2))')
+      .replace(/\\sqrt{([^}]*)}/g, 'sqrt($1)')
+      .replace(/\\ln/g, 'log').replace(/\\log/g, 'log10')
+      .replace(/\\sin/g, 'sin').replace(/\\cos/g, 'cos').replace(/\\tan/g, 'tan')
+      .replace(/\\pi/g, 'PI').replace(/\\e\b/g, 'E');
+  }
+  document.querySelectorAll('.math-graph').forEach(function(el) {
+    el.style.height = el.style.height || '360px';
+    var exprs = (el.dataset.exprs || '').split('|').map(function(e){return e.trim();}).filter(Boolean);
+    var isDark = document.documentElement.classList.contains('dark');
+    var bg   = isDark ? '#1e1e2e' : '#ffffff';
+    var grid = isDark ? '#313244' : '#e8e8e8';
+    var zero = isDark ? '#585b70' : '#aaaaaa';
+    var fg   = isDark ? '#cdd6f4' : '#24292f';
+    var traces = exprs.map(function(expr, i) {
+      var fn;
+      try { fn = new Function('x', 'with(Math){return ' + toJS(expr) + '}'); } catch(e) { return null; }
+      var xs = [], ys = [];
+      for (var v = -10; v <= 10; v += 0.04) {
+        var y; try { y = fn(v); } catch(e) { y = null; }
+        xs.push(v);
+        ys.push((typeof y === 'number' && isFinite(y) && Math.abs(y) < 1e6) ? y : null);
+      }
+      return {x:xs, y:ys, mode:'lines', name:expr, connectgaps:false,
+              line:{color:COLORS[i % COLORS.length], width:2.5}};
+    }).filter(Boolean);
+    var layout = {
+      paper_bgcolor:bg, plot_bgcolor:bg,
+      font:{color:fg, size:12},
+      xaxis:{zeroline:true, zerolinecolor:zero, gridcolor:grid, zerolinewidth:1.5},
+      yaxis:{zeroline:true, zerolinecolor:zero, gridcolor:grid, zerolinewidth:1.5},
+      margin:{l:50,r:20,t:16,b:40},
+      showlegend:exprs.length > 1,
+      legend:{bgcolor:'transparent', font:{color:fg}}
+    };
+    Plotly.newPlot(el, traces, layout, {responsive:true, displayModeBar:false});
+  });
 })();
 
 // ── Notes ────────────────────────────────────────────────────────────────

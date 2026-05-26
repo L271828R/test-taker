@@ -202,5 +202,42 @@ int test_html_template() {
         }
     }
 
+    // BuildHTML includes the Desmos CDN script tag so graph blocks can render.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasDesmos = html.find("Plotly.newPlot") != std::string::npos;
+        if (!hasDesmos) {
+            std::cerr << "FAIL [graph-desmos-js]: Desmos CDN script not found in BuildHTML output\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-desmos-js]\n";
+        }
+    }
+
+    // BuildHTML includes JS that initialises Plotly on .math-graph divs.
+    {
+        std::string html = BuildHTML("", "test", false, 100);
+        bool hasInit = html.find("math-graph") != std::string::npos
+                    && html.find("Plotly.newPlot") != std::string::npos;
+        if (!hasInit) {
+            std::cerr << "FAIL [graph-plotly-init]: Plotly initialiser not found in BuildHTML output\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-plotly-init]\n";
+        }
+    }
+
+    // GetLLMReadme() documents the ```graph fence syntax.
+    {
+        std::string readme = GetLLMReadme();
+        bool hasGraph = readme.find("```graph") != std::string::npos;
+        if (!hasGraph) {
+            std::cerr << "FAIL [graph-llm-readme]: ```graph not documented in GetLLMReadme\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-llm-readme]\n";
+        }
+    }
+
     return failures;
 }

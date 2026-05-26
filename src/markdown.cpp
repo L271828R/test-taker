@@ -196,8 +196,10 @@ std::string RenderMarkdown(const std::string& md) {
 
     bool inCode    = false;
     bool inMermaid = false;
+    bool inGraph   = false;
     char fenceChar = '`';
     std::string mermaidBuf;
+    std::string graphBuf;
 
     bool inTidbit = false;
     std::string tidbitSpeaker;
@@ -342,13 +344,29 @@ std::string RenderMarkdown(const std::string& md) {
             continue;
         }
 
-        if (inCode || inMermaid) {
+        if (inCode || inMermaid || inGraph) {
             if (isClosingFence(raw, fenceChar)) {
                 if (inMermaid) {
                     html += "<div class=\"mermaid-wrapper\">"
                             "<div class=\"mermaid\">\n" + mermaidBuf + "</div></div>\n";
                     mermaidBuf.clear();
                     inMermaid = false;
+                } else if (inGraph) {
+                    // Build pipe-separated expression list from non-empty lines
+                    std::string exprs;
+                    std::istringstream gss(graphBuf);
+                    std::string gline;
+                    while (std::getline(gss, gline)) {
+                        while (!gline.empty() && (gline.back() == '\r' || gline.back() == ' '))
+                            gline.pop_back();
+                        if (gline.empty()) continue;
+                        if (!exprs.empty()) exprs += "|";
+                        exprs += gline;
+                    }
+                    html += "<div class=\"math-graph\" data-exprs=\""
+                          + EscapeHTML(exprs) + "\"></div>\n";
+                    graphBuf.clear();
+                    inGraph = false;
                 } else {
                     html += "</code></pre>\n";
                     inCode = false;
@@ -356,6 +374,8 @@ std::string RenderMarkdown(const std::string& md) {
             } else {
                 if (inMermaid)
                     mermaidBuf += raw + "\n";
+                else if (inGraph)
+                    graphBuf += raw + "\n";
                 else
                     html += EscapeHTML(raw) + "\n";
             }
@@ -371,6 +391,8 @@ std::string RenderMarkdown(const std::string& md) {
             fenceChar = raw[0];
             if (lang == "mermaid") {
                 inMermaid = true;
+            } else if (lang == "graph") {
+                inGraph = true;
             } else {
                 inCode = true;
                 if (!lang.empty())
@@ -554,6 +576,8 @@ std::string RenderMarkdown(const std::string& md) {
     if (inCode)    html += "</code></pre>\n";
     if (inMermaid) html += "<div class=\"mermaid-wrapper\"><div class=\"mermaid\">\n"
                            + mermaidBuf + "</div></div>\n";
+    if (inGraph)   html += "<div class=\"math-graph\" data-exprs=\""
+                           + EscapeHTML(graphBuf) + "\"></div>\n";
     if (inTidbit)  html += "<details class=\"tidbit\">\n"
                            "<summary>" + EscapeHTML(tidbitSpeaker) + "</summary>\n"
                            "<div class=\"tidbit-body\">" + RenderMarkdown(tidbitBuf) + "</div>\n"
@@ -715,6 +739,17 @@ code block. Clicking it copies the block's plain text to the Mac clipboard.
     ```
 
 Click the rendered diagram to zoom in.
+
+### Graphs (Desmos)
+
+    ```graph
+    x^{2}
+    x^{-3}
+    ```
+
+Renders an interactive Plotly graph (bundled offline). One LaTeX-style expression
+per line — use `x^{2}`, `sin(x)`, `1/x`, `\sqrt{x}`, etc. Multiple expressions are
+plotted together in different colours.
 
 ---
 

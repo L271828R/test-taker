@@ -723,6 +723,39 @@ int test_exam_prompt() {
         }
     }
 
+    // BuildLearnMorePrompt (deep-dive) always includes the graph fence hint.
+    {
+        std::string p = BuildLearnMorePrompt("What is a derivative?", "");
+        bool hasGraph = p.find("```graph") != std::string::npos;
+        if (!hasGraph) {
+            std::cerr << "FAIL [graph-hint-deep-dive]: ```graph not in BuildLearnMorePrompt\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-hint-deep-dive]\n";
+        }
+    }
+
+    // graph fence hint present in scoring prompt for large models, absent for small.
+    {
+        ExamConfig cfgLarge = cfg;
+        cfgLarge.largeModel = true;
+        std::string pLarge = BuildScoringAndNextPrompt(cfgLarge, {}, "What is a derivative?", "The slope.", 2);
+
+        ExamConfig cfgSmall = cfg;
+        cfgSmall.largeModel = false;
+        std::string pSmall = BuildScoringAndNextPrompt(cfgSmall, {}, "What is a derivative?", "The slope.", 2);
+
+        bool largeHas   = pLarge.find("```graph") != std::string::npos;
+        bool smallLacks = pSmall.find("```graph") == std::string::npos;
+        if (!largeHas || !smallLacks) {
+            std::cerr << "FAIL [graph-hint-scoring-prompt]:"
+                      << " largeHas=" << largeHas << " smallLacks=" << smallLacks << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [graph-hint-scoring-prompt]\n";
+        }
+    }
+
     // BuildScoringAndNextPrompt with personalities: the prompt must name exactly
     // ONE personality in the :::tidbit instruction — not a "pick one of" list.
     // Giving the LLM a list causes it to always pick the first (alphabetically),

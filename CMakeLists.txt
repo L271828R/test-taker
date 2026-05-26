@@ -82,6 +82,36 @@ add_custom_target(gen_hljs_headers ALL
     DEPENDS "${HLJS_JS_H}" "${HLJS_CSS_LIGHT_H}" "${HLJS_CSS_DARK_H}")
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── Plotly.js — downloaded ONCE at configure time, bundled offline ────────────
+set(PLOTLY_JS "${CMAKE_CURRENT_SOURCE_DIR}/plotly.min.js")
+if(NOT EXISTS "${PLOTLY_JS}")
+    message(STATUS "Downloading plotly.min.js (one-time only — bundled into binary for offline use)…")
+    file(DOWNLOAD
+        "https://cdn.plot.ly/plotly-2.35.2.min.js"
+        "${PLOTLY_JS}"
+        SHOW_PROGRESS
+        STATUS PLOTLY_DL
+    )
+    list(GET PLOTLY_DL 0 PLOTLY_DL_CODE)
+    if(NOT PLOTLY_DL_CODE EQUAL 0)
+        message(FATAL_ERROR
+            "Failed to download plotly.min.js (error ${PLOTLY_DL_CODE}).\n"
+            "Download manually and place at:\n  ${PLOTLY_JS}\n"
+            "  curl -L https://cdn.plot.ly/plotly-2.35.2.min.js -o \"${PLOTLY_JS}\"")
+    endif()
+endif()
+
+set(PLOTLY_JS_H "${CMAKE_CURRENT_BINARY_DIR}/plotly_js.h")
+add_custom_command(
+    OUTPUT  "${PLOTLY_JS_H}"
+    COMMAND ${XXD} -i -n plotly_js_data "${PLOTLY_JS}" > "${PLOTLY_JS_H}"
+    DEPENDS "${PLOTLY_JS}"
+    COMMENT "Embedding plotly.min.js into binary"
+    VERBATIM
+)
+add_custom_target(gen_plotly_header ALL DEPENDS "${PLOTLY_JS_H}")
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── SQLite3 ──────────────────────────────────────────────────────────────────
 # Prefer Homebrew's sqlite on macOS (system SDK doesn't expose headers cleanly).
 if(APPLE)
@@ -145,7 +175,7 @@ set(SOURCES
     src/thumbnail.cpp
 )
 add_executable(test-taker ${SOURCES})
-add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
+add_dependencies(test-taker gen_mermaid_header gen_hljs_headers gen_plotly_header)
 
 target_include_directories(test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})
 target_link_libraries(test-taker PRIVATE ${wxWidgets_LIBRARIES} ${SQLite3_LIBRARIES})
@@ -212,7 +242,7 @@ add_executable(test_test-taker
     src/new_session_html.cpp
     src/game_data.cpp
 )
-add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers)
+add_dependencies(test_test-taker gen_mermaid_header gen_hljs_headers gen_plotly_header)
 target_include_directories(test_test-taker PRIVATE src ${CMAKE_CURRENT_BINARY_DIR} ${SQLite3_INCLUDE_DIRS})
 target_link_libraries(test_test-taker PRIVATE ${SQLite3_LIBRARIES})
 
