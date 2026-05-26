@@ -323,8 +323,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .turn.active .whynot-btn { opacity:1; }
 .turn.active { background:var(--surface); }
 .game-drop { position:relative; display:inline-block; }
-.game-drop:hover .game-menu,
-.game-drop:focus-within .game-menu { display:block; }
+.game-drop.open .game-menu { display:block; }
 .game-menu { display:none; position:absolute; top:100%; left:0;
              min-width:130px; background:var(--surface);
              border:1px solid var(--border); border-radius:4px;
@@ -336,7 +335,7 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .game-menu .sub-label { display:block; padding:5px 11px; font-size:.82em;
                         color:var(--text); white-space:nowrap; cursor:default; }
 .game-menu .sub-label::after { content:' \25BA'; font-size:0.75em; }
-.game-menu .sub-wrap:hover .sub-menu,
+.game-menu .sub-wrap.sub-open .sub-menu,
 .game-menu .sub-wrap:focus-within .sub-menu { display:block; }
 .game-menu .sub-menu { display:none; position:absolute; left:100%; top:-2px;
                        min-width:160px; background:var(--surface);
@@ -372,6 +371,40 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .verdict.silent  { background:#57606a; color:#fff; opacity:0.6; }
 .explanation { font-size:.95em; }
 </style>
+<script>
+(function() {
+  function closeAll() {
+    document.querySelectorAll('.game-drop.open').forEach(function(d) {
+      d.classList.remove('open');
+    });
+  }
+  document.addEventListener('click', function(e) {
+    var trigger = e.target.closest('.game-drop > span');
+    if (trigger) {
+      var drop = trigger.parentElement;
+      var wasOpen = drop.classList.contains('open');
+      closeAll();
+      if (!wasOpen) drop.classList.add('open');
+      return;
+    }
+    closeAll();
+  });
+  // Sub-menu flyouts use mouseover (they're inside an already-open menu)
+  document.addEventListener('mouseover', function(e) {
+    var label = e.target.closest('.sub-label');
+    if (!label) return;
+    var wrap = label.parentElement;
+    wrap.parentElement.querySelectorAll('.sub-wrap.sub-open').forEach(function(d) {
+      if (d !== wrap) d.classList.remove('sub-open');
+    });
+    wrap.classList.add('sub-open');
+  });
+  document.addEventListener('mouseout', function(e) {
+    var wrap = e.target.closest('.sub-wrap');
+    if (wrap && !wrap.contains(e.relatedTarget)) wrap.classList.remove('sub-open');
+  });
+})();
+</script>
 )";
 
     auto makeSnippet = [](const std::string& q) -> std::string {
