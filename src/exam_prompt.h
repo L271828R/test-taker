@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 #include "project.h"
@@ -185,3 +186,8 @@ std::string PersonalityDropdownJS(const std::string& wrapperClass,
 // Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
 // Includes a clear-history link.
 std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups);
+
+// Scan persona images and return a map of PersonalityDef::displayQ → data: URL
+// for every personality whose slug matches a file in the personas directory.
+// Returns an empty map when the personas directory doesn't exist or is empty.
+std::map<std::string, std::string> LoadPersonalityThumbnails();

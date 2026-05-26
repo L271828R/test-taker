@@ -1,5 +1,6 @@
 #include "turn_chat_panel.h"
 #include "turn_chat.h"
+#include "exam_prompt.h"
 #include "logger.h"
 #include "saved_convos.h"
 #include <ctime>
@@ -69,6 +70,7 @@ void TurnChatPanel::OpenTurn(const QuestionTurn& turn,
     m_busy         = false;
     m_savedIndices.clear();
     m_turns        = LoadTurnChat(sessionFile, turnIndex);
+    m_thumbnails   = LoadPersonalityThumbnails();
 
     std::string label = "Q" + std::to_string(turnIndex + 1)
                       + " \xe2\x80\x94 " + ScoreLabel(turn.score);
@@ -143,7 +145,7 @@ void TurnChatPanel::OnClose(wxCommandEvent&) {
 // ---------------------------------------------------------------------------
 std::string TurnChatPanel::BuildChatHTML(const std::string& pendingQ) const {
     return BuildTurnChatHTML(m_examTurn, m_turnIndex, m_turns,
-                             m_darkMode, m_savedIndices, pendingQ, m_busy);
+                             m_darkMode, m_savedIndices, pendingQ, m_busy, m_thumbnails);
 }
 
 // ---------------------------------------------------------------------------

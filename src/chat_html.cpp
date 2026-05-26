@@ -77,7 +77,8 @@ std::string BuildChatTurnHTML(const ConversationTurn& turn,
                                int idx,
                                bool darkMode,
                                bool saved,
-                               const std::vector<std::string>& personalities) {
+                               const std::vector<std::string>& personalities,
+                               const std::map<std::string, std::string>& thumbnails) {
     (void)darkMode;    // colours handled by CSS variables
     (void)personalities; // tidbit chars — unrelated to explain-like buttons
 
@@ -91,6 +92,11 @@ std::string BuildChatTurnHTML(const ConversationTurn& turn,
         "testtaker://chat-explain/", "/" + si,
         "chat-explain-drop", "chat-explain-btn", "chat-explain-menu");
 
+    auto thumbIt = thumbnails.find(turn.question);
+    std::string avatarHtml;
+    if (thumbIt != thumbnails.end())
+        avatarHtml = "<img class='persona-img' src='" + thumbIt->second + "' alt=''>";
+
     std::string html =
         "<div class='chat-turn'>"
         "<div class='chat-toolbar'>"
@@ -101,7 +107,7 @@ std::string BuildChatTurnHTML(const ConversationTurn& turn,
           "title='Deep dive: learn more'>&#x1F4D6; learn&nbsp;more</a>"
           "</div>"
           "<div class='chat-q'>" + EscapeHTML(turn.question) + "</div>"
-          "<div class='chat-a'>" + RenderMarkdown(turn.answer) + "</div>"
+          "<div class='chat-a'>" + avatarHtml + RenderMarkdown(turn.answer) + "</div>"
           "</div>\n";
 
     // Include toggle JS in every fragment so unit tests can verify it.

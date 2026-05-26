@@ -1,5 +1,6 @@
 #include "exam_prompt.h"
 #include "markdown.h"
+#include "persona.h"
 #include <random>
 #include <sstream>
 
@@ -1201,4 +1202,18 @@ std::string BuildGameHintPrompt(const std::string& question,
         << "- Never say 'A is correct', 'B is wrong', or anything equivalent.\n"
         << "- Be concise. No preamble.\n";
     return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::map<std::string, std::string> LoadPersonalityThumbnails() {
+    auto fileUrls = ScanPersonaImages();
+    if (fileUrls.empty()) return {};
+    auto dataUrls = ToDataURLs(fileUrls);
+    std::map<std::string, std::string> result;
+    for (const auto& p : kPersonalities) {
+        auto it = dataUrls.find(p.slug);
+        if (it != dataUrls.end())
+            result[p.displayQ] = it->second;
+    }
+    return result;
 }

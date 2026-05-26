@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -41,4 +42,5 @@ std::string BuildTurnChatHTML(const QuestionTurn& examTurn,
                                bool darkMode,
                                const std::set<int>& savedIndices = {},
                                const std::string& pendingQ = "",
-                               bool busy = false);
+                               bool busy = false,
+                               const std::map<std::string, std::string>& thumbnails = {});

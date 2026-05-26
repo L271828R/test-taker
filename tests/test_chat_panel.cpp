@@ -167,5 +167,25 @@ int test_chat_panel() {
         }
     }
 
+    // BuildChatTurnHTML floats persona-img right inside .chat-a when thumbnail matches
+    {
+        ConversationTurn turn;
+        turn.question = "\xf0\x9f\xa7\xa5 Columbo";
+        turn.answer   = "Just one more thing...";
+        std::map<std::string, std::string> thumbs = {
+            {"\xf0\x9f\xa7\xa5 Columbo", "data:image/jpeg;base64,FAKEDATA"}
+        };
+        std::string html = BuildChatTurnHTML(turn, 0, false, false, {}, thumbs);
+        bool hasImg  = html.find("persona-img") != std::string::npos;
+        bool hasData = html.find("FAKEDATA")    != std::string::npos;
+        if (!hasImg || !hasData) {
+            std::cerr << "FAIL [chat-turn-persona-img]: hasImg=" << hasImg
+                      << " hasData=" << hasData << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [chat-turn-persona-img]\n";
+        }
+    }
+
     return failures;
 }

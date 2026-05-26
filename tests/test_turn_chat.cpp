@@ -310,5 +310,48 @@ int test_turn_chat() {
         }
     }
 
+    // BuildTurnChatHTML floats persona-img right inside .a when thumbnail matches
+    {
+        QuestionTurn examTurn;
+        examTurn.question    = "What is IAM?";
+        examTurn.userAnswer  = "Identity management";
+        examTurn.score       = Score::Star5;
+        examTurn.explanation = "Correct.";
+        TurnChatTurn t;
+        t.question = "\xf0\x9f\xa7\xa5 Columbo";
+        t.answer   = "Just one more thing...";
+        std::map<std::string, std::string> thumbs = {
+            {"\xf0\x9f\xa7\xa5 Columbo", "data:image/jpeg;base64,FAKEDATA"}
+        };
+        std::string html = BuildTurnChatHTML(examTurn, 0, {t}, false, {}, "", false, thumbs);
+        bool hasImg  = html.find("persona-img") != std::string::npos;
+        bool hasData = html.find("FAKEDATA")    != std::string::npos;
+        if (!hasImg || !hasData) {
+            std::cerr << "FAIL [turn-chat-persona-img]: hasImg=" << hasImg
+                      << " hasData=" << hasData << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-persona-img]\n";
+        }
+    }
+
+    // BuildTurnChatHTML shows no persona-img when thumbnails map is empty
+    {
+        QuestionTurn examTurn;
+        examTurn.question = "Q?";
+        examTurn.score    = Score::Star5;
+        TurnChatTurn t;
+        t.question = "\xf0\x9f\xa7\xa5 Columbo";
+        t.answer   = "Just one more thing...";
+        std::string html = BuildTurnChatHTML(examTurn, 0, {t}, false, {}, "", false, {});
+        bool noImg = html.find("<img class='persona-img'") == std::string::npos;
+        if (!noImg) {
+            std::cerr << "FAIL [turn-chat-no-persona-img]\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-no-persona-img]\n";
+        }
+    }
+
     return failures;
 }
