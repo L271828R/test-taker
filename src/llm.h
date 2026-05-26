@@ -50,6 +50,18 @@ inline std::string BackendLabel(LLMBackend backend) {
     return "Clipboard (manual)";
 }
 
+// Build a shell command that runs `inner` in a login bash, first cd-ing to $HOME
+// so that a deleted CWD doesn't abort bash -l shell initialisation.
+inline std::string BuildLoginShellCmd(const std::string& inner) {
+    std::string q = "'";
+    for (char c : inner) {
+        if (c == '\'') q += "'\\''";
+        else           q += c;
+    }
+    q += "'";
+    return "cd \"$HOME\" && bash -l -c " + q + " 2>&1";
+}
+
 // Invoke the LLM synchronously. Must be called from a background thread for
 // all backends except Clipboard (which must run on the main thread).
 // For Clipboard: copies the prompt to clipboard and returns ok=true, text="clipboard".

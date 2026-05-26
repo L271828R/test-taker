@@ -92,6 +92,22 @@ int test_new_session_html() {
         }
     }
 
+    // ── [ns-html-backend-codex-gemini] ──────────────────────────────────────
+    // Codex CLI and Gemini CLI must appear in the backend dropdown so the exam
+    // tab can use those backends the same way the Create tab can.
+    {
+        std::string html = BuildNewSessionHTML(defaultState());
+        bool hasCodex  = contains(html, "Codex CLI");
+        bool hasGemini = contains(html, "Gemini CLI");
+        if (!hasCodex || !hasGemini) {
+            std::cerr << "FAIL [ns-html-backend-codex-gemini]: codex=" << hasCodex
+                      << " gemini=" << hasGemini << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [ns-html-backend-codex-gemini]\n";
+        }
+    }
+
     // ── [ns-html-apikey-hidden] ──────────────────────────────────────────────
     // Default backend is "claude -p" → apikey row must be hidden
     {
