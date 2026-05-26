@@ -28,6 +28,7 @@ public:
 
     void SaveFormState() const;
     void SetDarkMode(bool dark);
+    void ReloadLibrary();
 
 private:
     StartCallback       m_onStart;
@@ -38,19 +39,14 @@ private:
 
     void Render();
     void LoadPersonalityLibrary();
-    void SavePersonalityLibrary() const;
 
     void HandleStart(const std::string& payload);
     void HandleRefreshOllama();
     void HandleOpenContext();
     void HandleResetWeights();
-    void HandleAddPersonality(const std::string& payload);
-    void HandleDeletePersonality(const std::string& payload);
 
     std::string ExtractFormJSON() const;
     std::string GenerateSessionFilename() const;
 
     void OnNsAction(wxWebViewEvent&);
-
-    wxDECLARE_EVENT_TABLE();
 };

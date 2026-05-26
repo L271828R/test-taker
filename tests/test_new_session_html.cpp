@@ -204,40 +204,38 @@ int test_new_session_html() {
         }
     }
 
-    // ── [ns-html-personality-checkboxes] ────────────────────────────────────
+    // ── [ns-html-personality-pills] ─────────────────────────────────────────
+    // Selected personas are shown as read-only pills, not editable checkboxes.
     {
         NewSessionFormState s = defaultState();
-        s.personalityLibrary["Science"] = {"Einstein", "Feynman"};
+        s.selectedPersonalities = {"Einstein", "Feynman"};
         std::string html = BuildNewSessionHTML(s);
         bool hasEinstein = contains(html, "Einstein");
         bool hasFeynman  = contains(html, "Feynman");
-        bool hasCb = contains(html, "pers-check");
-        bool ok = hasEinstein && hasFeynman && hasCb;
+        bool noCb        = !contains(html, "pers-check");
+        bool ok = hasEinstein && hasFeynman && noCb;
         if (!ok) {
-            std::cerr << "FAIL [ns-html-personality-checkboxes]: einstein=" << hasEinstein
-                      << " feynman=" << hasFeynman << " cb=" << hasCb << "\n";
+            std::cerr << "FAIL [ns-html-personality-pills]: einstein=" << hasEinstein
+                      << " feynman=" << hasFeynman << " no-cb=" << noCb << "\n";
             ++failures;
         } else {
-            std::cout << "PASS [ns-html-personality-checkboxes]\n";
+            std::cout << "PASS [ns-html-personality-pills]\n";
         }
     }
 
-    // ── [ns-html-personality-checked] ───────────────────────────────────────
+    // ── [ns-html-personality-empty] ──────────────────────────────────────────
+    // When no personas are checked show the "Personas tab" hint.
     {
         NewSessionFormState s = defaultState();
-        s.personalityLibrary["Science"] = {"Einstein", "Feynman"};
-        s.selectedPersonalities = {"Einstein"};
         std::string html = BuildNewSessionHTML(s);
-        // Einstein's checkbox must have "checked"
-        // We look for the value="Einstein" checkbox with checked attribute
-        bool hasChecked = contains(html, "value='Einstein' checked")
-                       || contains(html, "value=\"Einstein\" checked")
-                       || contains(html, "checked") && contains(html, "Einstein");
-        if (!hasChecked) {
-            std::cerr << "FAIL [ns-html-personality-checked]: no checked attr for Einstein\n";
+        bool hasHint = contains(html, "Personas");
+        bool noCb    = !contains(html, "pers-check");
+        if (!hasHint || !noCb) {
+            std::cerr << "FAIL [ns-html-personality-empty]: hint=" << hasHint
+                      << " no-cb=" << noCb << "\n";
             ++failures;
         } else {
-            std::cout << "PASS [ns-html-personality-checked]\n";
+            std::cout << "PASS [ns-html-personality-empty]\n";
         }
     }
 

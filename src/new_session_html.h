@@ -17,8 +17,7 @@ struct NewSessionFormState {
     std::vector<std::string> ollamaModels;   // populated after refresh
     bool        hasCorpus     = false;
     bool        useCorpus     = false;
-    std::map<std::string, std::vector<std::string>> personalityLibrary;
-    std::vector<std::string> selectedPersonalities;
+    std::vector<std::string> selectedPersonalities; // from Personas tab checked set
     int         tidbitCount   = 1;
     bool        darkMode      = false;
     std::string statusMsg;

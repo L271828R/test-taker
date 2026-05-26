@@ -182,16 +182,25 @@ function showHint(text){
 
 // ---------------------------------------------------------------------------
 std::string BuildCurrentQuestionHTML(const std::string& question, bool busy) {
+    static const char* kQuestionCSS = R"(<style>
+@keyframes questionIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+@keyframes examPulse{0%,100%{opacity:.35}50%{opacity:1}}
+.current-question{animation:questionIn 0.45s cubic-bezier(0.16,1,0.3,1);}
+.current-question-loading{animation:examPulse 1.5s ease-in-out infinite;}
+</style>
+)";
     if (question.empty()) {
         if (!busy) return "";
-        return "<div class='current-question'>"
-               "<em style='color:var(--text-muted)'>"
-               "\xe2\x8f\xb3 Generating question\xe2\x80\xa6"  // ⏳ Generating question…
+        return std::string(kQuestionCSS)
+             + "<div class='current-question'>"
+               "<em class='current-question-loading' style='color:var(--text-muted)'>"
+               "\xe2\x8f\xb3 Generating question\xe2\x80\xa6"
                "</em></div>\n";
     }
-    return "<div class='current-question'>"
-           + RenderMarkdown(question)
-           + "</div>\n";
+    return std::string(kQuestionCSS)
+         + "<div class='current-question'>"
+         + RenderMarkdown(question)
+         + "</div>\n";
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +512,8 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
 .verdict.skipped { background:#57606a; color:#fff; }
 .verdict.silent  { background:#57606a; color:#fff; opacity:0.6; }
 .explanation { font-size:.95em; }
+@keyframes turnIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.turn:last-child{animation:turnIn 0.4s cubic-bezier(0.16,1,0.3,1);}
 </style>
 )";
 

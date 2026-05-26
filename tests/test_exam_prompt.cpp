@@ -1276,6 +1276,58 @@ int test_exam_prompt() {
         }
     }
 
+    // ── Transition animations ────────────────────────────────────────────────
+
+    // examAction posts immediately — no delay, no exit animation blocking input.
+    {
+        ExamInputState s; s.active = true; s.hasQuestion = true;
+        std::string html = BuildExamInputSection(s);
+        bool hasAction  = html.find("examAction") != std::string::npos;
+        bool hasNoDelay = html.find("setTimeout") == std::string::npos;
+        if (!hasAction || !hasNoDelay) {
+            std::cerr << "FAIL [exam-action-no-delay]: examAction must post immediately, no setTimeout\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-action-no-delay]\n";
+        }
+    }
+
+    // New question div has a CSS animation (slide-up + fade).
+    {
+        std::string html = BuildCurrentQuestionHTML("What is RAII?", false);
+        bool hasAnim = html.find("animation") != std::string::npos;
+        if (!hasAnim) {
+            std::cerr << "FAIL [exam-question-anim]: .current-question must have a CSS animation\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-question-anim]\n";
+        }
+    }
+    // Loading placeholder has a pulse animation while waiting.
+    {
+        std::string html = BuildCurrentQuestionHTML("", true);
+        bool hasPulse = html.find("animation") != std::string::npos;
+        if (!hasPulse) {
+            std::cerr << "FAIL [exam-loading-pulse]: loading placeholder must have a pulse animation\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-loading-pulse]\n";
+        }
+    }
+    // RenderExamTurns CSS defines a keyframe for new-turn slide-in.
+    {
+        QuestionTurn t;
+        t.question = "Q"; t.userAnswer = "A"; t.explanation = "E"; t.score = Score::Star4;
+        std::string html = RenderExamTurns({t}, {0}, {}, {});
+        bool hasKeyframe = html.find("@keyframes") != std::string::npos;
+        if (!hasKeyframe) {
+            std::cerr << "FAIL [exam-turn-slide-in]: RenderExamTurns must define a @keyframes for turn entry\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-turn-slide-in]\n";
+        }
+    }
+
     // ── PersonalityDropdownCSS ───────────────────────────────────────────────
 
     // Wrapper class gets position:relative.

@@ -1,5 +1,6 @@
 #include "app_frame.h"
 #include "new_session_panel.h"
+#include "persona_tab.h"
 #include "exam_panel.h"
 #include "review_panel.h"
 #include "chat_panel.h"
@@ -18,7 +19,7 @@
 #include <unistd.h>
 
 // Notebook tab indices
-enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS, TAB_SAVED };
+enum TabIndex { TAB_PROJECTS = 0, TAB_NEW_SESSION, TAB_PERSONAS, TAB_EXAM, TAB_REVIEW, TAB_CHAT, TAB_CORPUS, TAB_SAVED };
 
 wxBEGIN_EVENT_TABLE(AppFrame, wxFrame)
     EVT_MENU(ID_THEME_LIGHT,  AppFrame::OnThemeLight)
@@ -30,6 +31,7 @@ wxBEGIN_EVENT_TABLE(AppFrame, wxFrame)
     EVT_MENU(ID_FONT_RESET,    AppFrame::OnFontReset)
     EVT_MENU(wxID_EXIT,        AppFrame::OnExit)
     EVT_CLOSE(AppFrame::OnClose)
+    EVT_NOTEBOOK_PAGE_CHANGED(wxID_ANY, AppFrame::OnTabChanged)
 wxEND_EVENT_TABLE()
 
 // ---------------------------------------------------------------------------
@@ -79,6 +81,9 @@ AppFrame::AppFrame()
             OnSessionStarted(projDir, sessionFile, cfg, llmCfg);
         });
 
+    // Personas tab
+    m_personaPage = new PersonaTab(m_notebook, m_darkMode);
+
     // Exam tab
     m_examPage = new ExamPanel(m_notebook,
         [this](const std::string& sessionFile){ OnSessionComplete(sessionFile); },
@@ -103,6 +108,7 @@ AppFrame::AppFrame()
 
     m_notebook->AddPage(m_projectPage,    "Projects");
     m_notebook->AddPage(m_newSessionPage, "New Session");
+    m_notebook->AddPage(m_personaPage,    "Personas");
     m_notebook->AddPage(m_examPage,       "Exam");
     m_notebook->AddPage(m_reviewPage,     "Review");
     m_notebook->AddPage(m_chatPage,       "Chat");
@@ -117,7 +123,22 @@ AppFrame::AppFrame()
 }
 
 // ---------------------------------------------------------------------------
+void AppFrame::OnTabChanged(wxBookCtrlEvent& evt) {
+    int sel = evt.GetSelection();
+    if (sel == TAB_PERSONAS)
+        m_personaPage->Activate();
+    else if (sel == TAB_NEW_SESSION)
+        m_newSessionPage->ReloadLibrary();
+    evt.Skip();
+}
+
+// ---------------------------------------------------------------------------
 void AppFrame::OnProjectActivated(const std::string& projectDir) {
+    // Guard: can fire via wxYield during panel construction before all members exist.
+    if (!m_newSessionPage || !m_reviewPage || !m_examPage ||
+        !m_chatPage || !m_corpusPage || !m_savedPage)
+        return;
+
     m_activeProjectDir = projectDir;
 
     if (projectDir.empty()) {
@@ -225,6 +246,7 @@ void AppFrame::OnThemeLight(wxCommandEvent&) {
     wxConfig("TestTaker").Write("darkMode", false);
     m_projectPage->SetDarkMode(false);
     m_newSessionPage->SetDarkMode(false);
+    m_personaPage->SetDarkMode(false);
     m_examPage->SetDarkMode(false);
     m_chatPage->SetDarkMode(false);
     m_savedPage->SetDarkMode(false);
@@ -236,6 +258,7 @@ void AppFrame::OnThemeDark(wxCommandEvent&) {
     wxConfig("TestTaker").Write("darkMode", true);
     m_projectPage->SetDarkMode(true);
     m_newSessionPage->SetDarkMode(true);
+    m_personaPage->SetDarkMode(true);
     m_examPage->SetDarkMode(true);
     m_chatPage->SetDarkMode(true);
     m_savedPage->SetDarkMode(true);

@@ -4,7 +4,6 @@
 #include "meta.h"
 #include "llm_response.h"
 #include "logger.h"
-#include "personality_lib.h"
 #include "project.h"
 #include <chrono>
 #include <ctime>
@@ -94,10 +93,6 @@ static std::vector<std::string> FetchOllamaModels() {
 // Event table
 // ---------------------------------------------------------------------------
 
-wxBEGIN_EVENT_TABLE(NewSessionPanel, wxPanel)
-    EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, NewSessionPanel::OnNsAction)
-wxEND_EVENT_TABLE()
-
 // ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
@@ -114,10 +109,15 @@ NewSessionPanel::NewSessionPanel(wxWindow* parent, bool darkMode, StartCallback 
     sizer->Add(m_webView, 1, wxEXPAND);
     SetSizer(sizer);
 
+    // wxWebViewEvent does not propagate — must bind on the webview itself.
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+                    &NewSessionPanel::OnNsAction, this);
+
     // Stub page so the webview has something to show before Render()
     m_webView->SetPage("<html><body></body></html>", "");
 
-    // Add the script message handler after the event loop is running
+    // AddScriptMessageHandler internally calls RunScript which pumps the event
+    // loop — defer until after construction is fully complete.
     CallAfter([this]() {
         m_webView->AddScriptMessageHandler("nsAction");
     });
@@ -146,52 +146,21 @@ void NewSessionPanel::SetDarkMode(bool dark) {
 }
 
 // ---------------------------------------------------------------------------
-// LoadPersonalityLibrary — mirrors old PersonalityPickerPanel::LoadLibrary
+void NewSessionPanel::ReloadLibrary() {
+    LoadPersonalityLibrary();
+    Render();
+}
+
+// ---------------------------------------------------------------------------
+// LoadPersonalityLibrary — reads checked set from the shared Personas tab config
 // ---------------------------------------------------------------------------
 
 void NewSessionPanel::LoadPersonalityLibrary() {
     wxConfig cfg("TestTaker");
     cfg.SetPath("/charlib");
-
-    wxString catStr;
-    if (!cfg.Read("categories", &catStr) || catStr.empty()) {
-        m_state.personalityLibrary = DefaultPersonalityLibrary();
-    } else {
-        m_state.personalityLibrary.clear();
-        wxStringTokenizer tok(catStr, ",");
-        while (tok.HasMoreTokens()) {
-            std::string cat = tok.GetNextToken().ToStdString();
-            wxString charStr;
-            cfg.Read(wxString::FromUTF8(cat), &charStr);
-            auto& vec = m_state.personalityLibrary[cat];
-            wxStringTokenizer ctok(charStr, "|");
-            while (ctok.HasMoreTokens())
-                vec.push_back(ctok.GetNextToken().ToStdString());
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// SavePersonalityLibrary — mirrors old PersonalityPickerPanel::SaveLibrary
-// ---------------------------------------------------------------------------
-
-void NewSessionPanel::SavePersonalityLibrary() const {
-    wxConfig cfg("TestTaker");
-    cfg.SetPath("/charlib");
-
-    wxString catStr;
-    for (auto& [cat, chars] : m_state.personalityLibrary) {
-        if (!catStr.empty()) catStr += ",";
-        catStr += wxString::FromUTF8(cat);
-
-        wxString charStr;
-        for (auto& ch : chars) {
-            if (!charStr.empty()) charStr += "|";
-            charStr += wxString::FromUTF8(ch);
-        }
-        cfg.Write(wxString::FromUTF8(cat), charStr);
-    }
-    cfg.Write("categories", catStr);
+    wxString checkedStr;
+    cfg.Read("checked", &checkedStr);
+    m_state.selectedPersonalities = SplitPipe(checkedStr.ToStdString());
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +190,6 @@ void NewSessionPanel::SyncProject(const std::string& projectDir) {
             m_state.topic        = "";
             m_state.instructions = "";
             m_state.focusAreas   = {};
-            m_state.selectedPersonalities = SplitPipe(pcfg.personalities);
 
             AppState st = LoadAppState();
             if (!st.backend.empty())    m_state.backend    = st.backend;
@@ -238,7 +206,6 @@ void NewSessionPanel::SyncProject(const std::string& projectDir) {
             if (!pcfg.examOllamaModel.empty())   m_state.ollamaModel  = pcfg.examOllamaModel;
             if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
                 m_state.tidbitCount = pcfg.examTidbitCount;
-            m_state.selectedPersonalities = SplitPipe(pcfg.personalities);
         }
     }
 
@@ -280,7 +247,6 @@ void NewSessionPanel::SaveFormState() const {
             std::string ak    = nsJsonField(json, "apiKey");
             std::string om    = nsJsonField(json, "ollamaModel");
             std::string fa    = nsJsonField(json, "focusAreas");
-            std::string pers  = nsJsonField(json, "personalities");
             std::string tc    = nsJsonField(json, "tidbitCount");
 
             if (!topic.empty()) pcfg.examTopic        = topic;
@@ -289,7 +255,6 @@ void NewSessionPanel::SaveFormState() const {
             if (!bk.empty())    pcfg.examBackend       = bk;
             if (!ak.empty())    pcfg.examApiKey        = ak;
             if (!om.empty())    pcfg.examOllamaModel   = om;
-            if (!pers.empty())  pcfg.personalities     = pers;
             if (!tc.empty())    {
                 try { pcfg.examTidbitCount = std::stoi(tc); } catch (...) {}
             }
@@ -302,7 +267,6 @@ void NewSessionPanel::SaveFormState() const {
             pcfg.examBackend      = m_state.backend;
             pcfg.examApiKey       = m_state.apiKey;
             pcfg.examOllamaModel  = m_state.ollamaModel;
-            pcfg.personalities    = JoinPipe(m_state.selectedPersonalities);
             pcfg.examTidbitCount  = m_state.tidbitCount;
         }
         SaveConfig(m_activeProjectDir, pcfg);
@@ -350,8 +314,6 @@ void NewSessionPanel::OnNsAction(wxWebViewEvent& evt) {
     else if (action == "refresh-ollama") HandleRefreshOllama();
     else if (action == "open-context")   HandleOpenContext();
     else if (action == "reset-weights")  HandleResetWeights();
-    else if (action == "add-personality")    HandleAddPersonality(payload);
-    else if (action == "delete-personality") HandleDeletePersonality(payload);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,7 +338,6 @@ void NewSessionPanel::HandleStart(const std::string& payload) {
     std::string apiKey   = nsJsonField(payload, "apiKey");
     std::string olModel  = nsJsonField(payload, "ollamaModel");
     std::string faStr    = nsJsonField(payload, "focusAreas");
-    std::string persStr  = nsJsonField(payload, "personalities");
     std::string tcStr    = nsJsonField(payload, "tidbitCount");
     std::string ucStr    = nsJsonField(payload, "useCorpus");
 
@@ -393,7 +354,7 @@ void NewSessionPanel::HandleStart(const std::string& payload) {
     cfg.difficulty     = diff.empty() ? "mixed" : diff;
     cfg.totalQuestions = totalQ;
     cfg.useCorpus      = useCorpus;
-    cfg.personalities  = SplitPipe(persStr);
+    cfg.personalities  = m_state.selectedPersonalities;
     cfg.tidbitCount    = tidCnt;
 
     // Load context.md if present
@@ -444,7 +405,6 @@ void NewSessionPanel::HandleStart(const std::string& payload) {
     m_state.backend      = backend;
     m_state.apiKey       = apiKey;
     m_state.ollamaModel  = olModel;
-    m_state.selectedPersonalities = cfg.personalities;
     m_state.tidbitCount  = tidCnt;
     SaveFormState();
 
@@ -524,35 +484,3 @@ void NewSessionPanel::HandleResetWeights() {
     m_webView->RunScript("nsSetStatus('Topic weights cleared.')");
 }
 
-// ---------------------------------------------------------------------------
-// HandleAddPersonality / HandleDeletePersonality
-// ---------------------------------------------------------------------------
-
-void NewSessionPanel::HandleAddPersonality(const std::string& payload) {
-    std::string cat  = nsJsonField(payload, "category");
-    std::string name = nsJsonField(payload, "name");
-    if (cat.empty() || name.empty()) return;
-
-    auto& vec = m_state.personalityLibrary[cat];
-    if (std::find(vec.begin(), vec.end(), name) != vec.end()) return;
-    vec.push_back(name);
-    SavePersonalityLibrary();
-    Render();
-}
-
-void NewSessionPanel::HandleDeletePersonality(const std::string& payload) {
-    std::string cat  = nsJsonField(payload, "category");
-    std::string name = nsJsonField(payload, "name");
-    if (cat.empty() || name.empty()) return;
-
-    auto it = m_state.personalityLibrary.find(cat);
-    if (it == m_state.personalityLibrary.end()) return;
-    auto& vec = it->second;
-    vec.erase(std::remove(vec.begin(), vec.end(), name), vec.end());
-    m_state.selectedPersonalities.erase(
-        std::remove(m_state.selectedPersonalities.begin(),
-                    m_state.selectedPersonalities.end(), name),
-        m_state.selectedPersonalities.end());
-    SavePersonalityLibrary();
-    Render();
-}

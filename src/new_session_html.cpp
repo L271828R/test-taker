@@ -65,12 +65,9 @@ textarea:focus,select:focus{outline:2px solid var(--link);outline-offset:-1px}
 .ns-fa-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
 .ns-fa-text{flex:1}
 .ns-fa-stars{width:80px}
-.pers-details{margin-bottom:6px;border:1px solid var(--border);border-radius:4px}
-.pers-details summary{padding:6px 10px;cursor:pointer;user-select:none;
-  font-weight:600;list-style:none;color:var(--text)}
-.pers-details summary::-webkit-details-marker{display:none}
-.pers-body{padding:8px 12px;display:flex;flex-wrap:wrap;gap:8px}
-.pers-item{display:flex;align-items:center;gap:4px;font-size:.9em}
+.pers-body{display:flex;flex-wrap:wrap;gap:6px}
+.pers-pill{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:2px 10px;font-size:.85em;color:var(--text)}
 .ns-project-row{display:flex;align-items:center;gap:10px;
   margin-bottom:14px;padding:10px;background:var(--surface);
   border:1px solid var(--border);border-radius:6px}
@@ -93,10 +90,6 @@ function nsCollectForm() {
         var stars = row.querySelector('.ns-fa-stars').value;
         if (txt) { if (faStr) faStr += '|'; faStr += stars + '@@' + txt; }
     });
-    var persList = [];
-    document.querySelectorAll('.pers-check:checked').forEach(function(cb) {
-        persList.push(cb.value);
-    });
     var corpus = document.getElementById('ns-corpus');
     return JSON.stringify({
         action: 'start',
@@ -109,7 +102,6 @@ function nsCollectForm() {
         ollamaModel: (document.getElementById('ns-ollama-model')||{}).value||'',
         useCorpus: corpus ? corpus.checked.toString() : 'false',
         focusAreas: faStr,
-        personalities: persList.join('|'),
         tidbitCount: document.getElementById('ns-tidbit-count').value
     });
 }
@@ -212,27 +204,16 @@ static std::string BuildFocusAreas(const std::vector<FocusArea>& areas) {
     return out;
 }
 
-// Build personality checkboxes grouped by category
-static std::string BuildPersonalitySection(
-    const std::map<std::string, std::vector<std::string>>& library,
-    const std::vector<std::string>& selected)
-{
-    if (library.empty()) return "";
-
-    std::string out;
-    for (const auto& [category, chars] : library) {
-        out += "<details class='pers-details'>"
-               "<summary>" + EscapeHTML(category) + "</summary>"
-               "<div class='pers-body'>";
-        for (const auto& ch : chars) {
-            bool checked = std::find(selected.begin(), selected.end(), ch) != selected.end();
-            out += "<label class='pers-item'>"
-                   "<input type='checkbox' class='pers-check' value='" + EscapeHTML(ch) + "'";
-            if (checked) out += " checked";
-            out += "> " + EscapeHTML(ch) + "</label>";
-        }
-        out += "</div></details>\n";
-    }
+// Read-only pill list of active personas (managed in Personas tab).
+static std::string BuildPersonalitySection(const std::vector<std::string>& selected) {
+    if (selected.empty())
+        return "<div style='color:var(--text-muted);font-size:.85em'>"
+               "None active &mdash; check some in the <b>Personas</b> tab."
+               "</div>";
+    std::string out = "<div class='pers-body' style='padding:4px 0'>";
+    for (const auto& name : selected)
+        out += "<span class='pers-pill'>" + EscapeHTML(name) + "</span>";
+    out += "</div>";
     return out;
 }
 
@@ -294,8 +275,7 @@ std::string BuildNewSessionHTML(const NewSessionFormState& s) {
     std::string corpusStyle  = s.hasCorpus    ? "" : "display:none";
 
     std::string focusRows = BuildFocusAreas(s.focusAreas);
-    std::string persSection = BuildPersonalitySection(s.personalityLibrary,
-                                                      s.selectedPersonalities);
+    std::string persSection = BuildPersonalitySection(s.selectedPersonalities);
 
     std::string form =
         BuildProjectRow(s) +
@@ -386,7 +366,7 @@ std::string BuildNewSessionHTML(const NewSessionFormState& s) {
 
         // Corpus toggle
         "<div id='ns-corpus-row' style='" + corpusStyle + "'>"
-        "<label class='pers-item'>"
+        "<label>"
         "<input type='checkbox' id='ns-corpus'" + (s.useCorpus ? " checked" : "") + ">"
         " Use corpus for context (RAG)</label>"
         "</div>\n"

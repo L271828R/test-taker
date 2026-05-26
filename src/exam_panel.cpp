@@ -448,6 +448,8 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
     }
 
     std::string extraCSS = R"(<style>
+@keyframes examPageIn{from{opacity:0}to{opacity:1}}
+body{animation:examPageIn 0.3s ease-out;}
 .current-question { background:var(--surface); border:2px solid var(--link);
                     border-radius:6px; padding:1em; margin-top:1.5em;
                     font-size:1.05em; }

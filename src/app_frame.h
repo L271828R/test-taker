@@ -9,6 +9,7 @@
 
 // Forward declarations — panels are included in app_frame.cpp only.
 class NewSessionPanel;
+class PersonaTab;
 class ExamPanel;
 class ReviewPanel;
 class ChatPanel;
@@ -33,6 +34,7 @@ private:
     wxNotebook*       m_notebook        = nullptr;
     ProjectPanel*     m_projectPage     = nullptr;
     NewSessionPanel*  m_newSessionPage  = nullptr;
+    PersonaTab*       m_personaPage     = nullptr;
     ExamPanel*        m_examPage        = nullptr;
     ReviewPanel*      m_reviewPage      = nullptr;
     ChatPanel*        m_chatPage        = nullptr;
@@ -54,6 +56,9 @@ private:
                           const std::string& sessionFile,
                           int                questionIndex);
     void OnDeepDiveRequested();
+
+    // ── Tab handler ───────────────────────────────────────────────────────
+    void OnTabChanged(wxBookCtrlEvent&);
 
     // ── Menu handlers ─────────────────────────────────────────────────────
     void OnThemeLight(wxCommandEvent&);

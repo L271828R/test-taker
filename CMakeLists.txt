@@ -139,6 +139,10 @@ set(SOURCES
     src/saved_convos.cpp
     src/saved_panel.cpp
     src/game_data.cpp
+    src/persona.cpp
+    src/persona_tab.cpp
+    src/persona_tab_html.cpp
+    src/thumbnail.cpp
 )
 add_executable(test-taker ${SOURCES})
 add_dependencies(test-taker gen_mermaid_header gen_hljs_headers)
@@ -175,7 +179,11 @@ add_executable(test_test-taker
     tests/test_chat_panel.cpp
     tests/test_new_session_html.cpp
     tests/test_project_panel_html.cpp
+    tests/test_persona_tab.cpp
+    tests/thumbnail_stub.cpp
     src/project_panel_html.cpp
+    src/persona.cpp
+    src/persona_tab_html.cpp
     src/config.cpp
     src/markdown.cpp
     src/html_template.cpp
