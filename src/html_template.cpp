@@ -717,6 +717,30 @@ zmStage.addEventListener('touchend', () => { zmDrag = false; lastDist = 0; });
 )HTML";
 }
 
+// Replace invalid UTF-8 bytes with '?' so wxString::FromUTF8 never sees bad input.
+static std::string SanitizeUTF8(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    const auto* p = reinterpret_cast<const unsigned char*>(s.data());
+    const auto* e = p + s.size();
+    while (p < e) {
+        unsigned char c = *p;
+        int extra = 0;
+        if      (c < 0x80)              extra = 0;
+        else if ((c & 0xE0) == 0xC0)    extra = 1;
+        else if ((c & 0xF0) == 0xE0)    extra = 2;
+        else if ((c & 0xF8) == 0xF0)    extra = 3;
+        else { out += '?'; ++p; continue; }
+        bool ok = true;
+        for (int j = 0; j < extra; ++j)
+            if (p + 1 + j >= e || (p[1 + j] & 0xC0) != 0x80) { ok = false; break; }
+        if (!ok) { out += '?'; ++p; continue; }
+        for (int j = 0; j <= extra; ++j) out += (char)p[j];
+        p += extra + 1;
+    }
+    return out;
+}
+
 std::string BuildLogsHTML(const std::string& rawLog,
                            const std::string& logPath,
                            bool darkMode) {
@@ -729,7 +753,7 @@ std::string BuildLogsHTML(const std::string& rawLog,
     const std::string red     = darkMode ? "#f85149" : "#cf222e";
 
     std::string rows;
-    std::istringstream ss(rawLog);
+    std::istringstream ss(SanitizeUTF8(rawLog));
     std::string line;
     while (std::getline(ss, line)) {
         if (line.empty()) continue;

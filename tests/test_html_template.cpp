@@ -150,6 +150,43 @@ int test_html_template() {
         }
     }
 
+    // BuildLogsHTML with invalid UTF-8 in log content must still produce
+    // valid UTF-8 HTML so wxString::FromUTF8 doesn't return an empty string.
+    // Reproduces: orphaned \xe3 lead byte from a truncated LLM response.
+    {
+        // \xe3 is a 3-byte lead byte — missing its two continuation bytes.
+        std::string raw =
+            "2026-05-26 09:00:00  LLM response: \xe6\xa0\xbc\xe3\xe2\x80\xa6 done\n";
+        std::string html = BuildLogsHTML(raw, "/tmp/test.log", false);
+
+        // Validate the returned HTML is valid UTF-8.
+        bool validUtf8 = true;
+        const unsigned char* p = reinterpret_cast<const unsigned char*>(html.data());
+        const unsigned char* e = p + html.size();
+        while (p < e) {
+            unsigned char c = *p;
+            int extra = 0;
+            if      (c < 0x80)              extra = 0;
+            else if ((c & 0xE0) == 0xC0)    extra = 1;
+            else if ((c & 0xF0) == 0xE0)    extra = 2;
+            else if ((c & 0xF8) == 0xF0)    extra = 3;
+            else { validUtf8 = false; break; }
+            for (int j = 0; j < extra; ++j) {
+                if (++p >= e || (*p & 0xC0) != 0x80) { validUtf8 = false; break; }
+            }
+            if (!validUtf8) break;
+            ++p;
+        }
+        bool hasTable = html.find("<table>") != std::string::npos;
+        if (!validUtf8 || !hasTable) {
+            std::cerr << "FAIL [logs-html-invalid-utf8]: validUtf8=" << validUtf8
+                      << " hasTable=" << hasTable << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [logs-html-invalid-utf8]\n";
+        }
+    }
+
     // BuildRagLogsHTML: empty log returns a valid HTML page with "RAG" in the title.
     {
         std::string html = BuildRagLogsHTML("", "/tmp/rag.log", false);
