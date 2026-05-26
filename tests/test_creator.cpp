@@ -63,6 +63,50 @@ int test_creator() {
         }
     }
 
+    // BuildPrompt with tidbitCount=3 must instruct the LLM to use 3 tidbits per chapter.
+    {
+        GenerationRequest req;
+        req.topic       = "black holes";
+        req.style       = "popular science";
+        req.characters  = {"Albert Einstein"};
+        req.tidbitCount = 3;
+
+        std::string prompt = BuildPrompt(req, "");
+        bool has3 = prompt.find("3") != std::string::npos;
+        bool hasTidbit = prompt.find("tidbit") != std::string::npos;
+        // Must explicitly say 3 tidbits (not just "at least one")
+        bool hasExact = prompt.find("exactly 3") != std::string::npos
+                     || prompt.find("three") != std::string::npos;
+        if (!has3 || !hasTidbit || !hasExact) {
+            std::cerr << "FAIL [build-prompt-tidbit-count]: "
+                      << "prompt should specify 3 tidbits per chapter\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-tidbit-count]\n";
+        }
+    }
+
+    // BuildPrompt with tidbitCount=1 (default) keeps "at least one" wording.
+    {
+        GenerationRequest req;
+        req.topic       = "black holes";
+        req.style       = "popular science";
+        req.characters  = {"Albert Einstein"};
+        req.tidbitCount = 1;
+
+        std::string prompt = BuildPrompt(req, "");
+        bool hasOne = prompt.find("at least one") != std::string::npos
+                   || prompt.find("1 tidbit") != std::string::npos
+                   || prompt.find("one tidbit") != std::string::npos;
+        if (!hasOne) {
+            std::cerr << "FAIL [build-prompt-tidbit-count-1]: "
+                      << "tidbitCount=1 should use 'at least one' or '1 tidbit'\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [build-prompt-tidbit-count-1]\n";
+        }
+    }
+
     // BuildPrompt includes a reminder to use the mdviewer/story-teller skill.
     {
         GenerationRequest req;

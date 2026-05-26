@@ -206,15 +206,22 @@ std::string BuildPrompt(const GenerationRequest& req, const std::string& llmRead
         out << "\n";
     }
 
+    {
+        int n = std::max(1, std::min(5, req.tidbitCount));
+        std::string tidbitCountStr = std::to_string(n);
+        std::string tidbitRule = (n == 1)
+            ? "Every chapter must contain at least one `:::tidbit` block."
+            : "Every chapter must contain exactly " + tidbitCountStr + " `:::tidbit` blocks.";
         out << "## Story structure\n\n"
-        << "Divide the story into numbered chapters. Each chapter **must** start with a "
-           "level-2 heading in exactly this format:\n\n"
-           "```\n## Chapter N: Title\n```\n\n"
-           "where N is a sequential integer starting at 1. "
-           "Keep chapters in order with no gaps. "
-           "Each chapter must contain at least five complete sentences of story text, "
-           "not counting tidbit content. "
-           "Every chapter must contain at least one `:::tidbit` block.\n\n";
+            << "Divide the story into numbered chapters. Each chapter **must** start with a "
+               "level-2 heading in exactly this format:\n\n"
+               "```\n## Chapter N: Title\n```\n\n"
+               "where N is a sequential integer starting at 1. "
+               "Keep chapters in order with no gaps. "
+               "Each chapter must contain at least five complete sentences of story text, "
+               "not counting tidbit content. "
+            << tidbitRule << "\n\n";
+    }
 
     out << "## Output format\n\n"
         << "Return ONLY the raw MDViewer markdown document — no explanation, preamble, "

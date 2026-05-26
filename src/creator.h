@@ -7,6 +7,7 @@ struct GenerationRequest {
     std::string style;
     std::vector<std::string> characters;
     std::string projectContext;
+    int tidbitCount = 1;  // tidbits per chapter (1–5)
 };
 
 // Builds a full LLM prompt from the request.

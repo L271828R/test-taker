@@ -1,12 +1,10 @@
 #pragma once
 #include <functional>
-#include <map>
-#include <set>
 #include <string>
 #include <vector>
 #include <wx/wx.h>
-#include <wx/checklst.h>
 #include <wx/combobox.h>
+#include <wx/spinctrl.h>
 #include "config.h"
 #include "creator.h"
 
@@ -17,6 +15,7 @@ public:
     using OpenCallback = std::function<void(const std::string& filepath)>;
     CreatePanel(wxWindow* parent, OpenCallback onFileGenerated);
     void SyncProject();
+    void ReloadPersonas();
 
 private:
     OpenCallback   m_openCallback;
@@ -26,15 +25,8 @@ private:
     wxStaticText*    m_projectPathLabel;
     wxTextCtrl*      m_topicCtrl;
     wxChoice*        m_styleChoice;
-
-    // ── Character library ─────────────────────────────────────────────────
-    wxListBox*       m_catList;     // left: category names
-    wxCheckListBox*  m_charList;    // right: characters in selected category
-
-    // category → ordered list of character names
-    std::map<std::string, std::vector<std::string>> m_charsByCategory;
-    // names that are checked for inclusion (survives category switches)
-    std::set<std::string> m_checkedChars;
+    wxStaticText*    m_personasLabel;  // read-only, shows personas from Personas tab
+    wxSpinCtrl*      m_tidbitCountSpin;
 
     // ── Backend ───────────────────────────────────────────────────────────
     wxChoice*        m_backendChoice;
@@ -49,22 +41,10 @@ private:
 
     bool m_generating = false;
 
-    // ── Character library helpers ─────────────────────────────────────────
-    void LoadCharLibrary();
-    void SaveCharLibrary() const;
-    void RefreshCharList();          // rebuild right panel from selected category
-    std::string SelectedCategory() const;
-
     // ── Event handlers ────────────────────────────────────────────────────
     void OnNewProject(wxCommandEvent&);
     void OnProjectSelected(wxCommandEvent&);
     void OnSave(wxCommandEvent&);
-    void OnCatSelected(wxCommandEvent&);
-    void OnCharToggled(wxCommandEvent&);
-    void OnAddCategory(wxCommandEvent&);
-    void OnDeleteCategory(wxCommandEvent&);
-    void OnAddCharacter(wxCommandEvent&);
-    void OnDeleteCharacter(wxCommandEvent&);
     void OnBackendChanged(wxCommandEvent&);
     void OnGenerate(wxCommandEvent&);
     void OnCopyPrompt(wxCommandEvent&);

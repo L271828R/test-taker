@@ -353,5 +353,28 @@ int test_turn_chat() {
         }
     }
 
+    // BuildTurnChatHTML shows persona-img for tidbit persona extracted from answer
+    {
+        QuestionTurn examTurn;
+        examTurn.question = "Q?";
+        examTurn.score    = Score::Star5;
+        TurnChatTurn t;
+        t.question = "Can you explain further?";
+        t.answer   = ":::tidbit[Albert Einstein]\nSome insight.\n:::\n";
+        std::map<std::string, std::string> thumbs = {
+            {"albert_einstein", "data:image/jpeg;base64,EINSTEINDATA"}
+        };
+        std::string html = BuildTurnChatHTML(examTurn, 0, {t}, false, {}, "", false, thumbs);
+        bool hasImg  = html.find("<img class='persona-img'") != std::string::npos;
+        bool hasData = html.find("EINSTEINDATA") != std::string::npos;
+        if (!hasImg || !hasData) {
+            std::cerr << "FAIL [turn-chat-tidbit-img]: hasImg=" << hasImg
+                      << " hasData=" << hasData << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [turn-chat-tidbit-img]\n";
+        }
+    }
+
     return failures;
 }

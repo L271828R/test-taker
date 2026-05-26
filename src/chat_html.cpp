@@ -93,6 +93,10 @@ std::string BuildChatTurnHTML(const ConversationTurn& turn,
         "chat-explain-drop", "chat-explain-btn", "chat-explain-menu");
 
     auto thumbIt = thumbnails.find(turn.question);
+    if (thumbIt == thumbnails.end()) {
+        std::string key = TidbitPersonaKey(turn.answer);
+        if (!key.empty()) thumbIt = thumbnails.find(key);
+    }
     std::string avatarHtml;
     if (thumbIt != thumbnails.end())
         avatarHtml = "<img class='persona-img' src='" + thumbIt->second + "' alt=''>";

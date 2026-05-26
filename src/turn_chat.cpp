@@ -1,4 +1,5 @@
 #include "turn_chat.h"
+#include "exam_prompt.h"
 #include "html_template.h"
 #include "markdown.h"
 #include <fstream>
@@ -176,6 +177,10 @@ body { padding: 12px; padding-bottom: 80px; }
             std::string saveClass = isSaved ? " saved" : "";
             std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
             auto thumbIt = thumbnails.find(t.question);
+            if (thumbIt == thumbnails.end()) {
+                std::string key = TidbitPersonaKey(t.answer);
+                if (!key.empty()) thumbIt = thumbnails.find(key);
+            }
             std::string avatarHtml;
             if (thumbIt != thumbnails.end())
                 avatarHtml = "<img class='persona-img' src='" + thumbIt->second + "' alt=''>";
