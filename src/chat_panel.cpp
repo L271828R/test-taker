@@ -75,6 +75,8 @@ void ChatPanel::SyncProject(const std::string& projectDir,
         if (start < p.size()) m_personalities.push_back(p.substr(start));
     }
 
+    m_thumbnails = LoadPersonalityThumbnails();
+
     // Create chat.md if it doesn't exist yet.
     if (!fs::exists(m_chatFile)) {
         std::ofstream f(m_chatFile);
@@ -106,7 +108,7 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
     for (int i = 0; i < (int)m_turns.size(); ++i) {
         body += BuildChatTurnHTML(m_turns[i], i, m_darkMode,
                                   m_savedIndices.count(i) > 0,
-                                  m_personalities);
+                                  m_personalities, m_thumbnails);
     }
     if (!pendingQ.empty()) {
         body += "<div class='chat-turn'>"
@@ -146,6 +148,9 @@ std::string ChatPanel::BuildChatHTML(const std::string& pendingQ) const {
           ".chat-a { background:" + aBg + "; border-radius:2px 8px 8px 8px;\n"
           "  padding:10px 14px; }\n"
           ".chat-a pre { margin:8px 0; }\n"
+          ".persona-img { float:right; max-width:110px; max-height:110px;\n"
+          "  border-radius:50%; margin:0 0 10px 14px; object-fit:cover;\n"
+          "  border:2px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,.18); }\n"
           ".thinking { color:var(--text-muted); font-style:italic; }\n"
           ".empty    { color:var(--text-muted); font-style:italic; }\n"
           "</style>";

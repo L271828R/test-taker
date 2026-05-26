@@ -2,6 +2,7 @@
 #include <wx/wx.h>
 #include <wx/webview.h>
 #include <functional>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -47,7 +48,8 @@ private:
     QuestionTurn          m_examTurn;
     bool                  m_busy       = false;
 
-    std::vector<TurnChatTurn> m_turns;
+    std::vector<TurnChatTurn>              m_turns;
+    std::map<std::string, std::string>    m_thumbnails;
 
     wxWebView*    m_webView    = nullptr;
     wxButton*     m_closeBtn   = nullptr;

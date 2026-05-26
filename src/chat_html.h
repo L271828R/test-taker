@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 #include "conversation.h"
@@ -20,4 +21,5 @@ std::string BuildChatTurnHTML(const ConversationTurn& turn,
                                int idx,
                                bool darkMode,
                                bool saved,
-                               const std::vector<std::string>& personalities);
+                               const std::vector<std::string>& personalities,
+                               const std::map<std::string, std::string>& thumbnails = {});

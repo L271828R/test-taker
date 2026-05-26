@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -65,6 +66,7 @@ private:
     std::string       m_statusText;
     std::vector<QuestionTurn>  m_turns;
     std::vector<HistoryGroup>  m_historyGroups;
+    std::map<std::string, std::string> m_thumbnails;  // persona name → data URL
 
     wxSplitterWindow* m_splitter   = nullptr;
     TurnChatPanel*    m_chatPanel  = nullptr;

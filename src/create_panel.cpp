@@ -14,8 +14,8 @@
 #include <fstream>
 #include <thread>
 #include <wx/button.h>
-#include <wx/checklst.h>
 #include <wx/choice.h>
+#include <wx/spinctrl.h>
 #include <wx/combobox.h>
 #include <wx/clipbrd.h>
 #include <wx/config.h>
@@ -42,28 +42,16 @@ enum {
     ID_CP_SAVE,
     ID_CP_OPEN_VIEW,
     ID_CP_CHAPTER_LIST,
-    ID_CP_CAT_LIST,
-    ID_CP_ADD_CAT,
-    ID_CP_DEL_CAT,
-    ID_CP_CHAR_LIST,
-    ID_CP_ADD_CHAR,
-    ID_CP_DEL_CHAR,
 };
 
 wxBEGIN_EVENT_TABLE(CreatePanel, wxPanel)
     EVT_BUTTON(ID_CP_NEW_PROJECT,    CreatePanel::OnNewProject)
     EVT_CHOICE(ID_CP_PROJECT_SEL,    CreatePanel::OnProjectSelected)
     EVT_BUTTON(ID_CP_SAVE,           CreatePanel::OnSave)
-    EVT_LISTBOX(ID_CP_CAT_LIST,      CreatePanel::OnCatSelected)
-    EVT_CHECKLISTBOX(ID_CP_CHAR_LIST, CreatePanel::OnCharToggled)
-    EVT_BUTTON(ID_CP_ADD_CAT,     CreatePanel::OnAddCategory)
-    EVT_BUTTON(ID_CP_DEL_CAT,     CreatePanel::OnDeleteCategory)
-    EVT_BUTTON(ID_CP_ADD_CHAR,    CreatePanel::OnAddCharacter)
-    EVT_BUTTON(ID_CP_DEL_CHAR,    CreatePanel::OnDeleteCharacter)
-    EVT_CHOICE(ID_CP_BACKEND,     CreatePanel::OnBackendChanged)
-    EVT_BUTTON(ID_CP_GENERATE,      CreatePanel::OnGenerate)
-    EVT_BUTTON(ID_CP_COPY_PROMPT,   CreatePanel::OnCopyPrompt)
-    EVT_BUTTON(ID_CP_OPEN_VIEW,     CreatePanel::OnOpenInView)
+    EVT_CHOICE(ID_CP_BACKEND,        CreatePanel::OnBackendChanged)
+    EVT_BUTTON(ID_CP_GENERATE,       CreatePanel::OnGenerate)
+    EVT_BUTTON(ID_CP_COPY_PROMPT,    CreatePanel::OnCopyPrompt)
+    EVT_BUTTON(ID_CP_OPEN_VIEW,      CreatePanel::OnOpenInView)
     EVT_LISTBOX_DCLICK(ID_CP_CHAPTER_LIST, CreatePanel::OnOpenInView)
 wxEND_EVENT_TABLE()
 
@@ -184,44 +172,29 @@ CreatePanel::CreatePanel(wxWindow* parent, OpenCallback onFileGenerated)
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
-    // ── Characters ────────────────────────────────────────────────────────
-    inner->Add(new wxStaticText(this, wxID_ANY, "Tidbit characters:"),
-               0, wxBOTTOM, 6);
+    // ── Personas + tidbit count ───────────────────────────────────────────
     {
-        // Two-panel: categories (left) + characters in category (right)
-        auto* cols = new wxBoxSizer(wxHORIZONTAL);
-
-        // Left: category list + add/delete buttons
-        auto* leftCol = new wxBoxSizer(wxVERTICAL);
-        m_catList = new wxListBox(this, ID_CP_CAT_LIST,
-                                  wxDefaultPosition, wxSize(140, 148));
-        leftCol->Add(m_catList, 1, wxEXPAND | wxBOTTOM, 4);
-        auto* catBtns = new wxBoxSizer(wxHORIZONTAL);
-        catBtns->Add(new wxButton(this, ID_CP_ADD_CAT, "+ Category",
-                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0, wxRIGHT, 4);
-        catBtns->Add(new wxButton(this, ID_CP_DEL_CAT, "✕",
-                                  wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0);
-        leftCol->Add(catBtns, 0);
-        cols->Add(leftCol, 0, wxEXPAND | wxRIGHT, 10);
-
-        // Right: character checklist + add/delete buttons
-        auto* rightCol = new wxBoxSizer(wxVERTICAL);
-        m_charList = new wxCheckListBox(this, ID_CP_CHAR_LIST,
-                                        wxDefaultPosition, wxSize(-1, 148));
-        rightCol->Add(m_charList, 1, wxEXPAND | wxBOTTOM, 4);
-        auto* charBtns = new wxBoxSizer(wxHORIZONTAL);
-        charBtns->Add(new wxButton(this, ID_CP_ADD_CHAR, "+ Character",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0, wxRIGHT, 4);
-        charBtns->Add(new wxButton(this, ID_CP_DEL_CHAR, "✕",
-                                   wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT), 0);
-        rightCol->Add(charBtns, 0);
-        cols->Add(rightCol, 1, wxEXPAND);
-
-        inner->Add(cols, 0, wxEXPAND | wxBOTTOM, 8);
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(this, wxID_ANY, "Personas:"),
+                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        m_personasLabel = new wxStaticText(this, wxID_ANY,
+            "(none \xe2\x80\x94 select in Personas tab)");
+        row->Add(m_personasLabel, 1, wxALIGN_CENTER_VERTICAL);
+        inner->Add(row, 0, wxEXPAND | wxBOTTOM, 6);
+    }
+    {
+        auto* row = new wxBoxSizer(wxHORIZONTAL);
+        row->Add(new wxStaticText(this, wxID_ANY, "Tidbits per chapter:"),
+                 0, wxALIGN_CENTER_VERTICAL | wxRIGHT, 8);
+        m_tidbitCountSpin = new wxSpinCtrl(this, wxID_ANY, "1",
+            wxDefaultPosition, wxSize(60, -1),
+            wxSP_ARROW_KEYS, 1, 5, 1);
+        row->Add(m_tidbitCountSpin, 0, wxALIGN_CENTER_VERTICAL);
+        inner->Add(row, 0, wxBOTTOM, 8);
     }
     inner->Add(new wxStaticLine(this), 0, wxEXPAND | wxBOTTOM, 10);
 
-    LoadCharLibrary();
+    ReloadPersonas();
 
     // ── Backend ───────────────────────────────────────────────────────────
     {
@@ -443,145 +416,25 @@ void CreatePanel::SyncProject() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Character library — persist to wxConfig
-// ---------------------------------------------------------------------------
-static const std::map<std::string, std::vector<std::string>>& default_library() {
-    static const std::map<std::string, std::vector<std::string>> lib = {
-        {"Science",    {"Albert Einstein", "Marie Curie", "Carl Sagan",
-                        "Richard Feynman", "Nikola Tesla", "Charles Darwin"}},
-        {"Literature", {"Sherlock Holmes", "Agatha Christie", "Edgar Allan Poe"}},
-        {"History",    {"Ada Lovelace", "Napoleon Bonaparte", "Cleopatra"}},
-    };
-    return lib;
-}
-
-void CreatePanel::LoadCharLibrary() {
-    wxConfig cfg("StoryTeller");
+void CreatePanel::ReloadPersonas() {
+    wxConfig cfg("TestTaker");
     cfg.SetPath("/charlib");
+    wxString checked;
+    cfg.Read("checked", &checked);
 
-    wxString catStr;
-    if (!cfg.Read("categories", &catStr) || catStr.empty()) {
-        m_charsByCategory = default_library();
-    } else {
-        wxStringTokenizer tok(catStr, ",");
-        while (tok.HasMoreTokens()) {
-            std::string cat = tok.GetNextToken().ToStdString();
-            wxString charStr;
-            cfg.Read(wxString::FromUTF8(cat), &charStr);
-            auto& vec = m_charsByCategory[cat];
-            wxStringTokenizer ctok(charStr, "|");
-            while (ctok.HasMoreTokens())
-                vec.push_back(ctok.GetNextToken().ToStdString());
-        }
+    if (checked.empty()) {
+        m_personasLabel->SetLabel("(none \xe2\x80\x94 select in Personas tab)");
+        return;
     }
 
-    m_catList->Clear();
-    for (auto& [cat, _] : m_charsByCategory)
-        m_catList->Append(wxString::FromUTF8(cat));
-    if (m_catList->GetCount() > 0) {
-        m_catList->SetSelection(0);
-        RefreshCharList();
+    // Build a comma-separated display string from the pipe-delimited stored value.
+    wxString display;
+    wxStringTokenizer tok(checked, "|");
+    while (tok.HasMoreTokens()) {
+        if (!display.empty()) display += ", ";
+        display += tok.GetNextToken();
     }
-}
-
-void CreatePanel::SaveCharLibrary() const {
-    wxConfig cfg("StoryTeller");
-    cfg.SetPath("/charlib");
-
-    // Build comma-separated category list.
-    wxString catStr;
-    for (auto& [cat, chars] : m_charsByCategory) {
-        if (!catStr.empty()) catStr += ",";
-        catStr += wxString::FromUTF8(cat);
-
-        wxString charStr;
-        for (auto& ch : chars) {
-            if (!charStr.empty()) charStr += "|";
-            charStr += wxString::FromUTF8(ch);
-        }
-        cfg.Write(wxString::FromUTF8(cat), charStr);
-    }
-    cfg.Write("categories", catStr);
-}
-
-std::string CreatePanel::SelectedCategory() const {
-    int sel = m_catList->GetSelection();
-    if (sel == wxNOT_FOUND) return "";
-    return m_catList->GetString(sel).ToStdString();
-}
-
-void CreatePanel::RefreshCharList() {
-    m_charList->Clear();
-    std::string cat = SelectedCategory();
-    auto it = m_charsByCategory.find(cat);
-    if (it == m_charsByCategory.end()) return;
-    for (auto& ch : it->second) {
-        unsigned int idx = m_charList->Append(wxString::FromUTF8(ch));
-        m_charList->Check(idx, m_checkedChars.count(ch) > 0);
-    }
-}
-
-void CreatePanel::OnCatSelected(wxCommandEvent&) { RefreshCharList(); }
-
-void CreatePanel::OnCharToggled(wxCommandEvent& evt) {
-    unsigned int idx = (unsigned int)evt.GetInt();
-    std::string name = m_charList->GetString(idx).ToStdString();
-    if (m_charList->IsChecked(idx))
-        m_checkedChars.insert(name);
-    else
-        m_checkedChars.erase(name);
-}
-
-void CreatePanel::OnAddCategory(wxCommandEvent&) {
-    wxString name = wxGetTextFromUser("Category name:", "Add Category", "", this).Trim();
-    if (name.empty() || m_charsByCategory.count(name.ToStdString())) return;
-    m_charsByCategory[name.ToStdString()];        // insert empty
-    m_catList->Append(name);
-    m_catList->SetSelection((int)m_catList->GetCount() - 1);
-    RefreshCharList();
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnDeleteCategory(wxCommandEvent&) {
-    std::string cat = SelectedCategory();
-    if (cat.empty()) return;
-    if (wxMessageBox("Delete category \"" + cat + "\" and all its characters?",
-                     "Confirm", wxYES_NO | wxNO_DEFAULT, this) != wxYES) return;
-    m_charsByCategory.erase(cat);
-    int sel = m_catList->GetSelection();
-    m_catList->Delete((unsigned int)sel);
-    if (m_catList->GetCount() > 0)
-        m_catList->SetSelection(std::min(sel, (int)m_catList->GetCount() - 1));
-    RefreshCharList();
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnAddCharacter(wxCommandEvent&) {
-    std::string cat = SelectedCategory();
-    if (cat.empty()) { SetStatus("Select a category first."); return; }
-    wxString name = wxGetTextFromUser("Character name:", "Add Character", "", this).Trim();
-    if (name.empty()) return;
-    std::string ch = name.ToStdString();
-    auto& vec = m_charsByCategory[cat];
-    if (std::find(vec.begin(), vec.end(), ch) != vec.end()) return; // duplicate
-    vec.push_back(ch);
-    unsigned int idx = m_charList->Append(name);
-    m_charList->Check(idx, true);
-    m_checkedChars.insert(ch);
-    SaveCharLibrary();
-}
-
-void CreatePanel::OnDeleteCharacter(wxCommandEvent&) {
-    int idx = m_charList->GetSelection();
-    if (idx == wxNOT_FOUND) return;
-    std::string cat = SelectedCategory();
-    std::string ch  = m_charList->GetString(idx).ToStdString();
-    auto& vec = m_charsByCategory[cat];
-    vec.erase(std::remove(vec.begin(), vec.end(), ch), vec.end());
-    m_checkedChars.erase(ch);
-    m_charList->Delete((unsigned int)idx);
-    SaveCharLibrary();
+    m_personasLabel->SetLabel(display);
 }
 
 void CreatePanel::OnBackendChanged(wxCommandEvent&) {
@@ -600,10 +453,18 @@ void CreatePanel::OnBackendChanged(wxCommandEvent&) {
 // Build a GenerationRequest from the current form state.
 GenerationRequest CreatePanel::BuildRequest() const {
     GenerationRequest req;
-    req.topic = m_topicCtrl->GetValue().ToStdString();
-    req.style = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
-    for (auto& ch : m_checkedChars)
-        req.characters.push_back(ch);
+    req.topic       = m_topicCtrl->GetValue().ToStdString();
+    req.style       = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
+    req.tidbitCount = m_tidbitCountSpin->GetValue();
+    {
+        wxConfig cfg("TestTaker");
+        cfg.SetPath("/charlib");
+        wxString checked;
+        cfg.Read("checked", &checked);
+        wxStringTokenizer tok(checked, "|");
+        while (tok.HasMoreTokens())
+            req.characters.push_back(tok.GetNextToken().ToStdString());
+    }
     std::string projDir = CurrentProjectPath().ToStdString();
     fs::path claudeMd = fs::path(projDir) / "claude.md";
     if (fs::exists(claudeMd)) {
@@ -751,12 +612,6 @@ void CreatePanel::SaveFormState() const {
     st.style   = m_styleChoice->GetString(m_styleChoice->GetSelection()).ToStdString();
     st.backend = m_backendChoice->GetString(m_backendChoice->GetSelection()).ToStdString();
 
-    std::string chars;
-    for (auto& ch : m_checkedChars) {
-        if (!chars.empty()) chars += "|";
-        chars += ch;
-    }
-    st.checkedChars  = chars;
     st.apiKey        = m_apiKeyCtrl->GetValue().ToStdString();
     st.ollamaModel   = m_ollamaModel->GetValue().ToStdString();
 
@@ -776,12 +631,6 @@ void CreatePanel::RestoreFormState(const AppState& st) {
             m_backendChoice->SetSelection(idx);
             UpdateBackendFields();
         }
-    }
-    if (!st.checkedChars.empty()) {
-        wxStringTokenizer tok(wxString::FromUTF8(st.checkedChars), "|");
-        while (tok.HasMoreTokens())
-            m_checkedChars.insert(tok.GetNextToken().ToStdString());
-        RefreshCharList();
     }
     if (!st.apiKey.empty())
         m_apiKeyCtrl->SetValue(wxString::FromUTF8(st.apiKey));

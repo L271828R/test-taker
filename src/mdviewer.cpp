@@ -197,6 +197,8 @@ MDViewerFrame::MDViewerFrame(const wxString& filePath)
             m_editPage->RefreshChapters();
         else if (m_projectPage && page == m_projectPage)
             m_projectPage->RefreshProjects();
+        else if (m_createPage && page == m_createPage)
+            m_createPage->ReloadPersonas();
     });
 
     // ── Frame layout ─────────────────────────────────────────────────────

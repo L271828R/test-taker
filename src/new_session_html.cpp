@@ -205,18 +205,6 @@ static std::string BuildFocusAreas(const std::vector<FocusArea>& areas) {
 }
 
 // Read-only pill list of active personas (managed in Personas tab).
-static std::string BuildPersonalitySection(const std::vector<std::string>& selected) {
-    if (selected.empty())
-        return "<div style='color:var(--text-muted);font-size:.85em'>"
-               "None active &mdash; check some in the <b>Personas</b> tab."
-               "</div>";
-    std::string out = "<div class='pers-body' style='padding:4px 0'>";
-    for (const auto& name : selected)
-        out += "<span class='pers-pill'>" + EscapeHTML(name) + "</span>";
-    out += "</div>";
-    return out;
-}
-
 // Build difficulty <select>
 static std::string BuildDifficultySelect(const std::string& current) {
     const char* opts[] = {"mixed", "easy", "medium", "hard"};
@@ -275,7 +263,6 @@ std::string BuildNewSessionHTML(const NewSessionFormState& s) {
     std::string corpusStyle  = s.hasCorpus    ? "" : "display:none";
 
     std::string focusRows = BuildFocusAreas(s.focusAreas);
-    std::string persSection = BuildPersonalitySection(s.selectedPersonalities);
 
     std::string form =
         BuildProjectRow(s) +
@@ -309,20 +296,9 @@ std::string BuildNewSessionHTML(const NewSessionFormState& s) {
         " onclick='nsAddFocusRow(\"\",3)'>+ Add area</button>"
         "</div>\n"
 
-        // Guest commentators
-        "<div class='ns-row'>"
-        "<div class='ns-hrow'>"
-        "<label style='margin-bottom:0'>Guest commentators:</label>"
-        "<label style='margin-bottom:0;font-weight:normal'>Tidbits per turn:</label>"
-        "<input type='number' id='ns-tidbit-count' min='1' max='10'"
-        " value='" + std::to_string(s.tidbitCount) + "' style='width:60px'>"
-        "</div>"
-        + persSection +
-        "</div>\n"
-
         "<hr class='ns-sep'>\n"
 
-        // Difficulty + Questions
+        // Difficulty + Questions + Tidbits per question
         "<div class='ns-row'>"
         "<div class='ns-hrow' style='flex-wrap:wrap;gap:16px'>"
         "<div style='display:flex;align-items:center;gap:6px'>"
@@ -333,6 +309,11 @@ std::string BuildNewSessionHTML(const NewSessionFormState& s) {
         "<label style='margin-bottom:0'>Questions:</label>"
         "<input type='number' id='ns-questions' min='1' max='50' style='width:70px'"
         " value='" + std::to_string(s.questions) + "'>"
+        "</div>"
+        "<div style='display:flex;align-items:center;gap:6px'>"
+        "<label style='margin-bottom:0'>Tidbits per question:</label>"
+        "<input type='number' id='ns-tidbit-count' min='1' max='5' style='width:56px'"
+        " value='" + std::to_string(std::max(1, std::min(5, s.tidbitCount))) + "'>"
         "</div>"
         "</div>"
         "</div>\n"

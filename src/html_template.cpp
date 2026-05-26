@@ -187,6 +187,10 @@ details.tidbit summary{
 }
 details.tidbit summary::before{content:"💬 "}
 details.tidbit summary::-webkit-details-marker{display:none}
+.tb-body-row{display:flex;gap:14px;align-items:flex-start}
+.tb-body-text{flex:1;min-width:0}
+.tb-avatar-lg{flex-shrink:0;width:80px;height:80px;border-radius:50%;object-fit:cover;
+  border:2px solid var(--border);box-shadow:0 2px 8px rgba(0,0,0,.18);display:block}
 details.tidbit[open] summary{border-bottom:1px solid var(--border)}
 .tidbit-body{padding:12px 16px}
 .tidbit-body p:last-child{margin-bottom:0}

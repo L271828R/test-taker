@@ -1,4 +1,5 @@
 #include "turn_chat.h"
+#include "exam_prompt.h"
 #include "html_template.h"
 #include "markdown.h"
 #include <fstream>
@@ -120,7 +121,8 @@ std::string BuildTurnChatHTML(const QuestionTurn& examTurn,
                                bool darkMode,
                                const std::set<int>& savedIndices,
                                const std::string& pendingQ,
-                               bool busy) {
+                               bool busy,
+                               const std::map<std::string, std::string>& thumbnails) {
     std::ostringstream body;
 
     bool inputDisabled = busy || turnIndex < 0;
@@ -136,6 +138,9 @@ body { padding: 12px; padding-bottom: 80px; }
   padding:0.15em 0.5em; font-size:0.82em; cursor:pointer;
   color:var(--text-muted); text-decoration:none; white-space:nowrap; }
 .tc-save-btn.saved { color:#1a7f37; border-color:#1a7f37; opacity:1; }
+.persona-img { float:right; max-width:110px; max-height:110px;
+  border-radius:50%; margin:0 0 10px 14px; object-fit:cover;
+  border:2px solid var(--border); box-shadow:0 2px 8px rgba(0,0,0,.18); }
 .q { background:var(--surface); border:1px solid var(--border);
      border-radius:8px 8px 8px 2px; padding:8px 12px;
      margin-bottom:6px; font-weight:500; }
@@ -171,13 +176,21 @@ body { padding: 12px; padding-bottom: 80px; }
             bool isSaved = savedIndices.count(i) > 0;
             std::string saveClass = isSaved ? " saved" : "";
             std::string saveLabel = isSaved ? "&#x1F516; saved" : "&#x1F516; save";
+            auto thumbIt = thumbnails.find(t.question);
+            if (thumbIt == thumbnails.end()) {
+                std::string key = TidbitPersonaKey(t.answer);
+                if (!key.empty()) thumbIt = thumbnails.find(key);
+            }
+            std::string avatarHtml;
+            if (thumbIt != thumbnails.end())
+                avatarHtml = "<img class='persona-img' src='" + thumbIt->second + "' alt=''>";
             body << "<div class='turn'>"
                  << "<div class='turn-toolbar'>"
                  << "<a class='tc-save-btn" << saveClass << "' href='testtaker://tc-save/"
                  << i << "'>" << saveLabel << "</a>"
                  << "</div>"
                  << "<div class='q'>" << RenderMarkdown(t.question) << "</div>"
-                 << "<div class='a'>" << RenderMarkdown(t.answer) << "</div>"
+                 << "<div class='a'>" << avatarHtml << RenderMarkdown(t.answer) << "</div>"
                  << "</div>\n";
         }
         if (!pendingQ.empty()) {

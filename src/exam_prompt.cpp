@@ -1,5 +1,6 @@
 #include "exam_prompt.h"
 #include "markdown.h"
+#include "persona.h"
 #include <random>
 #include <sstream>
 
@@ -14,7 +15,11 @@ static std::vector<std::string> splitPipe(const std::string& s) {
 }
 
 void ApplyProjectExamConfig(const ProjectConfig& pcfg, ExamConfig& cfg) {
-    cfg.personalities = splitPipe(pcfg.personalities);
+    // Only overwrite personalities when the project config explicitly sets them.
+    // StartSession passes cfg.personalities from the Personas tab; clearing it here
+    // when pcfg.personalities is empty would silence all tidbit output.
+    if (!pcfg.personalities.empty())
+        cfg.personalities = splitPipe(pcfg.personalities);
     cfg.moreOfTopics  = splitPipe(pcfg.examMoreOf);
     cfg.lessOfTopics  = splitPipe(pcfg.examLessOf);
     if (pcfg.examTidbitCount >= 1 && pcfg.examTidbitCount <= 10)
@@ -453,10 +458,83 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput) {
 }
 
 // ---------------------------------------------------------------------------
+// For each <details class="tidbit"> block whose persona name is in thumbnails,
+// wraps the body content in a flex row so the text sits left and a circular
+// avatar sits right. Uses rfind("</div>") to locate the tidbit-body closing
+// tag — safe because tidbit blocks cannot be nested.
+static std::string InjectTidbitImages(
+    const std::string& html,
+    const std::map<std::string, std::string>& thumbnails)
+{
+    if (thumbnails.empty()) return html;
+
+    const std::string detOpen  = "<details class=\"tidbit\">";
+    const std::string sumOpen  = "<summary>";
+    const std::string sumClose = "</summary>";
+    const std::string bodyOpen = "<div class=\"tidbit-body\">";
+    const std::string detClose = "</details>";
+
+    std::string result;
+    result.reserve(html.size() + 1024);
+    size_t pos = 0;
+
+    while (true) {
+        size_t ds = html.find(detOpen, pos);
+        if (ds == std::string::npos) { result += html.substr(pos); break; }
+
+        size_t detEnd = html.find(detClose, ds + detOpen.size());
+        if (detEnd == std::string::npos) { result += html.substr(pos); break; }
+        size_t afterDet = detEnd + detClose.size();
+
+        // Extract persona name from <summary> inside this block.
+        size_t ss = html.find(sumOpen,  ds);
+        size_t se = (ss < afterDet && ss != std::string::npos)
+                    ? html.find(sumClose, ss + sumOpen.size()) : std::string::npos;
+
+        // Find <div class="tidbit-body"> inside this block.
+        size_t bs = html.find(bodyOpen, ds);
+
+        if (ss < afterDet && se < afterDet && se != std::string::npos && bs < afterDet) {
+            std::string name = html.substr(ss + sumOpen.size(), se - ss - sumOpen.size());
+            std::string key  = NormalizePersonaName(name);
+            auto it = thumbnails.find(key);
+
+            if (!key.empty() && it != thumbnails.end()) {
+                // Body content = between bodyOpen and the last </div> in the block.
+                size_t bodyContentStart = bs + bodyOpen.size();
+                size_t lastDiv = html.rfind("</div>", detEnd);
+
+                if (lastDiv != std::string::npos && lastDiv >= bodyContentStart) {
+                    std::string bodyContent = html.substr(bodyContentStart,
+                                                          lastDiv - bodyContentStart);
+                    // Everything before the body content
+                    result += html.substr(pos, bodyContentStart - pos);
+                    // Flex row: text left, image right
+                    result += "<div class='tb-body-row'>"
+                              "<div class='tb-body-text'>" + bodyContent + "</div>"
+                              "<img class='tb-avatar-lg' src='" + it->second + "' alt=''>"
+                              "</div>";
+                    // Rest of the block from </div> onwards
+                    result += html.substr(lastDiv, afterDet - lastDiv);
+                    pos = afterDet;
+                    continue;
+                }
+            }
+        }
+
+        // No injection — copy block verbatim.
+        result += html.substr(pos, afterDet - pos);
+        pos = afterDet;
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
                              const std::vector<int>&          chatCounts,
                              const std::vector<std::string>&  moreOfTopics,
-                             const std::vector<std::string>&  lessOfTopics) {
+                             const std::vector<std::string>&  lessOfTopics,
+                             const std::map<std::string, std::string>& thumbnails) {
     std::ostringstream out;
 
     out << R"(<style>
@@ -634,7 +712,9 @@ std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
                 out << "<a class='whynot-btn' href='testtaker://whynot/" << i
                     << "' title='Why not perfect?'>&#x1F914;</a>";
             out << "</div>"
-                << "<div class='explanation'>" << RenderMarkdown(t.explanation) << "</div>";
+                << "<div class='explanation'>"
+                << InjectTidbitImages(RenderMarkdown(t.explanation), thumbnails)
+                << "</div>";
             if (!t.note.empty())
                 out << "<div class='turn-note'>" << EscapeHTML(t.note) << "</div>";
         }
@@ -1209,4 +1289,33 @@ std::string BuildGameHintPrompt(const std::string& question,
         << "- Never say 'A is correct', 'B is wrong', or anything equivalent.\n"
         << "- Be concise. No preamble.\n";
     return out.str();
+}
+
+// ---------------------------------------------------------------------------
+std::map<std::string, std::string> LoadPersonalityThumbnails() {
+    auto fileUrls = ScanPersonaImages();
+    if (fileUrls.empty()) return {};
+    auto dataUrls = ToDataURLs(fileUrls);
+
+    // Start with all persona images keyed by normalized name (for tidbit turns).
+    std::map<std::string, std::string> result = dataUrls;
+
+    // Also add kPersonalities displayQ keys (for explain-dropdown turns).
+    for (const auto& p : kPersonalities) {
+        auto it = dataUrls.find(p.slug);
+        if (it != dataUrls.end())
+            result[p.displayQ] = it->second;
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+std::string TidbitPersonaKey(const std::string& answer) {
+    static const std::string prefix = ":::tidbit[";
+    auto pos = answer.find(prefix);
+    if (pos == std::string::npos) return "";
+    pos += prefix.size();
+    auto close = answer.find(']', pos);
+    if (close == std::string::npos) return "";
+    return NormalizePersonaName(answer.substr(pos, close - pos));
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <string>
 #include <vector>
 #include "project.h"
@@ -85,10 +86,13 @@ ScoredResponse ParseScoredResponse(const std::string& llmOutput);
 // Render completed turns as HTML body fragment.
 // chatCounts[i] is the number of chat exchanges for turn i (0 = no chats yet).
 // Each turn gets a hover-highlight and testtaker://flag/N, note/N, discuss/N links.
+// thumbnails maps normalized persona name → data URL; used to show persona avatar
+// next to explanations that contain a :::tidbit[Name] block.
 std::string RenderExamTurns(const std::vector<QuestionTurn>& turns,
                              const std::vector<int>&          chatCounts,
-                             const std::vector<std::string>&  moreOfTopics = {},
-                             const std::vector<std::string>&  lessOfTopics = {});
+                             const std::vector<std::string>&  moreOfTopics  = {},
+                             const std::vector<std::string>&  lessOfTopics  = {},
+                             const std::map<std::string, std::string>& thumbnails = {});
 
 // A past session displayed in the history section of the Exam tab.
 // sessionFile is needed so interactive toolbar actions (flag, note, discuss, save)
@@ -185,3 +189,12 @@ std::string PersonalityDropdownJS(const std::string& wrapperClass,
 // Each group has interactive toolbar buttons that use testtaker://h{action}/G/I URLs.
 // Includes a clear-history link.
 std::string RenderHistoryGroups(const std::vector<HistoryGroup>& groups);
+
+// Build the persona thumbnail map: keyed by both normalized persona name (for tidbit
+// turns, e.g. "albert_einstein") and kPersonalities displayQ (for explain turns).
+// Returns an empty map when the personas directory doesn't exist or is empty.
+std::map<std::string, std::string> LoadPersonalityThumbnails();
+
+// Extract the tidbit persona key from a raw answer string.
+// Scans for :::tidbit[Name] and returns NormalizePersonaName(Name), or "" if absent.
+std::string TidbitPersonaKey(const std::string& answer);

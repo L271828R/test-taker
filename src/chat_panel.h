@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -26,7 +27,8 @@ private:
     std::string              m_projectDir;
     std::string              m_chatFile;   // <projectDir>/chat.md
     LLMConfig                m_llmCfg;
-    std::vector<std::string> m_personalities;
+    std::vector<std::string>           m_personalities;
+    std::map<std::string, std::string> m_thumbnails;
     bool                     m_darkMode = false;
     bool                     m_busy     = false;
     std::vector<ConversationTurn> m_turns;

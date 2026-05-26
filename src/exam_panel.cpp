@@ -16,8 +16,10 @@
 #include <sstream>
 #include <thread>
 #include <wx/app.h>
+#include <wx/config.h>
 #include <wx/filename.h>
 #include <wx/stdpaths.h>
+#include <wx/tokenzr.h>
 #include <wx/utils.h>
 
 namespace fs = std::filesystem;
@@ -113,6 +115,11 @@ void ExamPanel::StartSession(const std::string& projectDir,
     m_llmCfg          = llmCfg;
     SetDarkMode(darkMode);
     ApplyProjectExamConfig(LoadConfig(projectDir), m_cfg);
+    m_thumbnails = LoadPersonalityThumbnails();
+    Logger::get().log("ExamPanel::StartSession thumbnails=" + std::to_string(m_thumbnails.size())
+        + "  personas=" + std::to_string(m_cfg.personalities.size()));
+    for (const auto& kv : m_thumbnails)
+        Logger::get().log("  thumb key: " + kv.first);
     m_active          = true;
     m_busy            = false;
     m_questionIndex   = 0;
@@ -169,6 +176,23 @@ void ExamPanel::ResumeSession(const std::string& projectDir,
     m_cfg.totalQuestions = hdr.totalQuestions;
     m_cfg.projectContext.clear();
     ApplyProjectExamConfig(LoadConfig(projectDir), m_cfg);
+
+    // Session headers don't store personalities; load from the Personas tab config.
+    if (m_cfg.personalities.empty()) {
+        wxConfig cfg("TestTaker");
+        cfg.SetPath("/charlib");
+        wxString checked;
+        cfg.Read("checked", &checked);
+        wxStringTokenizer tok(checked, "|");
+        while (tok.HasMoreTokens())
+            m_cfg.personalities.push_back(tok.GetNextToken().ToStdString());
+    }
+
+    m_thumbnails = LoadPersonalityThumbnails();
+    Logger::get().log("ExamPanel::ResumeSession thumbnails=" + std::to_string(m_thumbnails.size())
+        + "  personas=" + std::to_string(m_cfg.personalities.size()));
+    for (const auto& kv : m_thumbnails)
+        Logger::get().log("  thumb key: " + kv.first);
 
     bool complete = (int)turns.size() >= hdr.totalQuestions;
     m_active = !complete;
@@ -389,7 +413,12 @@ void ExamPanel::SubmitAnswer(const std::string& answer) {
             turn.flagged     = false;
             m_turns.push_back(turn);
             AppendSessionTurn(m_sessionFile, turn);
-
+            {
+                std::string tkey = TidbitPersonaKey(turn.explanation);
+                Logger::get().log("turn tidbit key: '" + tkey + "'"
+                    + "  in_map=" + std::to_string(m_thumbnails.count(tkey))
+                    + "  expl_len=" + std::to_string(turn.explanation.size()));
+            }
             ++m_questionIndex;
 
             if (!scored.nextQuestion.empty()) {
@@ -439,7 +468,8 @@ std::string ExamPanel::BuildExamHTML(bool scrollToBottom) const {
             chatCounts.push_back((int)LoadTurnChat(m_sessionFile, i).size());
 
         body << RenderExamTurns(m_turns, chatCounts,
-                                m_cfg.moreOfTopics, m_cfg.lessOfTopics);
+                                m_cfg.moreOfTopics, m_cfg.lessOfTopics,
+                                m_thumbnails);
 
         body << BuildCurrentQuestionHTML(m_currentQuestion, m_busy);
         if (!m_active && !m_turns.empty()) {

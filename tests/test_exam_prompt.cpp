@@ -2,6 +2,7 @@
 #include "project.h"
 #include "session.h"
 #include <iostream>
+#include <map>
 
 int test_exam_prompt() {
     int failures = 0;
@@ -1015,6 +1016,31 @@ int test_exam_prompt() {
         }
     }
 
+    // ApplyProjectExamConfig must NOT clear cfg.personalities when pcfg.personalities
+    // is empty. StartSession sets cfg.personalities from the Personas tab; calling
+    // ApplyProjectExamConfig afterwards must not erase them.
+    {
+        ProjectConfig pcfg;
+        pcfg.personalities = "";   // project config has no per-project personas
+        pcfg.examTidbitCount = 2;
+
+        ExamConfig c;
+        c.personalities = {"Albert Einstein", "Nikola Tesla"};  // from Personas tab
+        c.tidbitCount   = 1;
+        ApplyProjectExamConfig(pcfg, c);
+
+        bool persOk  = (c.personalities.size() == 2);           // must survive
+        bool countOk = (c.tidbitCount == 2);                    // still updated
+        if (!persOk || !countOk) {
+            std::cerr << "FAIL [apply-project-exam-config-preserve-personas]:"
+                      << " pers=" << c.personalities.size()
+                      << " count=" << c.tidbitCount << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [apply-project-exam-config-preserve-personas]\n";
+        }
+    }
+
     // Personality dropdowns must use click-based .open class, not CSS :hover.
     // CSS :hover on <div> is unreliable in macOS WKWebView.
     {
@@ -1378,6 +1404,55 @@ int test_exam_prompt() {
             ++failures;
         } else {
             std::cout << "PASS [exam-turn-slide-in]\n";
+        }
+    }
+
+    // RenderExamTurns must inject a tb-avatar <img> inside the tidbit <summary>
+    // when the thumbnails map has a matching key for the tidbit persona.
+    {
+        QuestionTurn t;
+        t.question    = "What is E=mc²?";
+        t.userAnswer  = "Energy-mass equivalence.";
+        t.score       = Score::Star5;
+        t.explanation = "Energy equals mass times the speed of light squared."
+                        "\n:::tidbit[Albert Einstein]\nRelatively speaking!\n:::\n";
+        std::map<std::string, std::string> thumbs = {
+            {"albert_einstein", "data:image/jpeg;base64,EINSTEINDATA"}
+        };
+        std::string html = RenderExamTurns({t}, {0}, {}, {}, thumbs);
+        // Avatar must appear inside the tidbit body (flex row), not in the summary.
+        bool hasAvatar = html.find("<img class='tb-avatar-lg'") != std::string::npos;
+        bool hasData   = html.find("EINSTEINDATA") != std::string::npos;
+        // Must be inside the body row, not in <summary>
+        bool inBody    = html.find("tb-body-row") != std::string::npos;
+        bool notInSum  = html.find("<summary><img") == std::string::npos;
+        if (!hasAvatar || !hasData || !inBody || !notInSum) {
+            std::cerr << "FAIL [exam-turn-tidbit-img]: avatar=" << hasAvatar
+                      << " data=" << hasData << " inBody=" << inBody
+                      << " notInSum=" << notInSum << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-turn-tidbit-img]\n";
+        }
+    }
+
+    // RenderExamTurns must NOT show a tb-avatar when explanation has no tidbit.
+    {
+        QuestionTurn t;
+        t.question    = "What is HTTP?";
+        t.userAnswer  = "A protocol.";
+        t.score       = Score::Star4;
+        t.explanation = "HTTP is the Hypertext Transfer Protocol.";
+        std::map<std::string, std::string> thumbs = {
+            {"albert_einstein", "data:image/jpeg;base64,EINSTEINDATA"}
+        };
+        std::string html = RenderExamTurns({t}, {0}, {}, {}, thumbs);
+        bool hasAvatar = html.find("<img class='tb-avatar-lg'") != std::string::npos;
+        if (hasAvatar) {
+            std::cerr << "FAIL [exam-turn-no-img-without-tidbit]: avatar shown with no tidbit\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [exam-turn-no-img-without-tidbit]\n";
         }
     }
 

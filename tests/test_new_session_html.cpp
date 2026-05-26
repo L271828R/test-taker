@@ -204,41 +204,6 @@ int test_new_session_html() {
         }
     }
 
-    // ── [ns-html-personality-pills] ─────────────────────────────────────────
-    // Selected personas are shown as read-only pills, not editable checkboxes.
-    {
-        NewSessionFormState s = defaultState();
-        s.selectedPersonalities = {"Einstein", "Feynman"};
-        std::string html = BuildNewSessionHTML(s);
-        bool hasEinstein = contains(html, "Einstein");
-        bool hasFeynman  = contains(html, "Feynman");
-        bool noCb        = !contains(html, "pers-check");
-        bool ok = hasEinstein && hasFeynman && noCb;
-        if (!ok) {
-            std::cerr << "FAIL [ns-html-personality-pills]: einstein=" << hasEinstein
-                      << " feynman=" << hasFeynman << " no-cb=" << noCb << "\n";
-            ++failures;
-        } else {
-            std::cout << "PASS [ns-html-personality-pills]\n";
-        }
-    }
-
-    // ── [ns-html-personality-empty] ──────────────────────────────────────────
-    // When no personas are checked show the "Personas tab" hint.
-    {
-        NewSessionFormState s = defaultState();
-        std::string html = BuildNewSessionHTML(s);
-        bool hasHint = contains(html, "Personas");
-        bool noCb    = !contains(html, "pers-check");
-        if (!hasHint || !noCb) {
-            std::cerr << "FAIL [ns-html-personality-empty]: hint=" << hasHint
-                      << " no-cb=" << noCb << "\n";
-            ++failures;
-        } else {
-            std::cout << "PASS [ns-html-personality-empty]\n";
-        }
-    }
-
     // ── [ns-html-focus-area-rendered] ────────────────────────────────────────
     {
         NewSessionFormState s = defaultState();
@@ -330,6 +295,39 @@ int test_new_session_html() {
             ++failures;
         } else {
             std::cout << "PASS [ns-html-status-shown]\n";
+        }
+    }
+
+    // ── [ns-html-tidbit-count-input] ─────────────────────────────────────────
+    // A tidbit-count number input (1–5) must be present so the user can control
+    // how many persona tidbit blocks the LLM produces per exam question.
+    {
+        NewSessionFormState s = defaultState();
+        s.tidbitCount = 3;
+        std::string html = BuildNewSessionHTML(s);
+        bool hasInput = contains(html, "ns-tidbit-count");
+        bool hasValue = contains(html, "value='3'") || contains(html, "value=\"3\"");
+        bool collects = contains(html, "ns-tidbit-count");
+        if (!hasInput || !hasValue || !collects) {
+            std::cerr << "FAIL [ns-html-tidbit-count-input]:"
+                      << " input=" << hasInput
+                      << " value=" << hasValue << "\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [ns-html-tidbit-count-input]\n";
+        }
+    }
+
+    // ── [ns-html-tidbit-count-collected] ─────────────────────────────────────
+    // nsCollectForm() must include tidbitCount so HandleStart receives it.
+    {
+        std::string html = BuildNewSessionHTML(defaultState());
+        bool ok = contains(html, "tidbitCount");
+        if (!ok) {
+            std::cerr << "FAIL [ns-html-tidbit-count-collected]: tidbitCount missing from JS\n";
+            ++failures;
+        } else {
+            std::cout << "PASS [ns-html-tidbit-count-collected]\n";
         }
     }
 
