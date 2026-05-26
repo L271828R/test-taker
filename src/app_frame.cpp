@@ -120,6 +120,15 @@ AppFrame::AppFrame()
     SetSizer(frameSizer);
 
     Logger::get().log("=== AppFrame ready ===");
+
+    // Auto-activate the last-used project once the event loop starts. Deferred
+    // via CallAfter so all panel members are fully initialised before the
+    // activation callback touches them.
+    CallAfter([this]() {
+        AppState st = LoadAppState();
+        if (!st.currentProject.empty())
+            OnProjectActivated(st.currentProject);
+    });
 }
 
 // ---------------------------------------------------------------------------

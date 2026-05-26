@@ -19,14 +19,6 @@
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Event table
-// ---------------------------------------------------------------------------
-
-wxBEGIN_EVENT_TABLE(ProjectPanel, wxPanel)
-    EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED(wxID_ANY, ProjectPanel::OnPpAction)
-wxEND_EVENT_TABLE()
-
-// ---------------------------------------------------------------------------
 // JSON field extractor (same pattern as nsJsonField / chatJsonField)
 // ---------------------------------------------------------------------------
 
@@ -252,6 +244,10 @@ ProjectPanel::ProjectPanel(wxWindow* parent, OpenCallback onProjectActivated)
 
     m_webView->SetPage("<html><body></body></html>", "");
 
+    // wxWebViewEvent does not propagate — must bind on the webview itself.
+    m_webView->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED,
+                    &ProjectPanel::OnPpAction, this);
+
     CallAfter([this]() {
         m_webView->AddScriptMessageHandler("ppAction");
     });
@@ -330,14 +326,6 @@ void ProjectPanel::BuildTree() {
     m_state.activePath = st.currentProject;
 
     Render();
-
-    // Auto-activate last-used project on first load
-    if (!m_startupDone && !m_state.activePath.empty()) {
-        std::string path = m_state.activePath;
-        CallAfter([this, path]() {
-            if (m_openCallback) m_openCallback(path);
-        });
-    }
     m_startupDone = true;
 }
 

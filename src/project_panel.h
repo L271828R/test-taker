@@ -35,5 +35,4 @@ private:
     void HandleSort(const std::string& order);
 
     void OnPpAction(wxWebViewEvent&);
-    wxDECLARE_EVENT_TABLE();
 };
